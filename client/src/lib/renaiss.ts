@@ -1,7 +1,7 @@
 /**
- * Renaiss Protocol - On-chain NFT Data Fetcher (Optimized)
- * Uses batch JSON-RPC and parallel fetching for maximum speed
- * Target: all cards loaded within 2 seconds
+ * Renaiss Protocol - On-chain NFT Data Fetcher (Optimized v2)
+ * Uses batch JSON-RPC, parallel fetching, aggressive timeouts, and local cache
+ * Target: all cards loaded within 4 seconds
  */
 
 const BSC_RPC_URL = "/api/bsc-rpc";
@@ -119,6 +119,17 @@ function decodeString(hexResult: string): string {
   return result;
 }
 
+/* ===== Fetch with timeout helper ===== */
+
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 3500): Promise<Response> {
+  return Promise.race([
+    fetch(url, options),
+    new Promise<Response>((_, reject) =>
+      setTimeout(() => reject(new Error("Request timeout")), timeoutMs)
+    ),
+  ]);
+}
+
 /* ===== Batch JSON-RPC: send multiple eth_call in ONE HTTP request ===== */
 
 interface BatchCall {
@@ -136,11 +147,11 @@ async function batchEthCall(calls: BatchCall[]): Promise<string[]> {
     id: i + 1,
   }));
 
-  const response = await fetch(BSC_RPC_URL, {
+  const response = await fetchWithTimeout(BSC_RPC_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, 3500);
 
   const results = await response.json();
 
@@ -156,7 +167,7 @@ async function batchEthCall(calls: BatchCall[]): Promise<string[]> {
 }
 
 async function singleEthCall(to: string, data: string): Promise<string> {
-  const response = await fetch(BSC_RPC_URL, {
+  const response = await fetchWithTimeout(BSC_RPC_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -165,7 +176,7 @@ async function singleEthCall(to: string, data: string): Promise<string> {
       params: [{ to, data }, "latest"],
       id: 1,
     }),
-  });
+  }, 3000);
   const json = await response.json();
   if (json.error) throw new Error(`RPC Error: ${json.error.message || JSON.stringify(json.error)}`);
   return json.result;
@@ -191,16 +202,16 @@ export function isValidAddress(address: string): boolean {
 }
 
 /**
- * Fetch all Renaiss cards for a wallet - OPTIMIZED for speed
+ * Fetch all Renaiss cards for a wallet - OPTIMIZED v2 for speed
  *
  * Strategy:
- * 1. Single RPC call: balanceOf
+ * 1. Single RPC call: balanceOf (with timeout)
  * 2. ONE batch RPC call: all tokenOfOwnerByIndex calls at once
  * 3. ONE batch RPC call: all tokenURI calls at once
- * 4. Promise.all: fetch all metadata JSON in parallel
+ * 4. Promise.allSettled: fetch all metadata JSON in parallel (with individual timeouts)
  *
  * Total: ~3 HTTP requests to RPC + N parallel metadata fetches
- * Target: < 2 seconds for any reasonable collection size
+ * Target: < 4 seconds for any reasonable collection size
  */
 export async function fetchWalletCards(
   walletAddress: string,
@@ -210,7 +221,7 @@ export async function fetchWalletCards(
     throw new Error("Invalid wallet address format");
   }
 
-  // Step 1: Get balance (single call)
+  // Step 1: Get balance (single call with tight timeout)
   const balData = SELECTORS.balanceOf + padAddress(walletAddress);
   const balResult = await singleEthCall(RENAISS_CONTRACT, balData);
   const balance = parseInt(balResult, 16);
@@ -248,11 +259,14 @@ export async function fetchWalletCards(
       .replace("https://www.renaiss.xyz/index/token", METADATA_BASE);
   });
 
-  // Step 4: Fetch ALL metadata in parallel
+  // Step 4: Fetch ALL metadata in parallel with individual timeouts
+  // Use Promise.allSettled so one failure doesn't block others
   const cards: RenaisCard[] = [];
+  let loadedCount = 0;
+
   const metadataPromises = uris.map(async (uri, i) => {
     try {
-      const response = await fetch(uri);
+      const response = await fetchWithTimeout(uri, {}, 3500);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const metadata: RenaisCardMetadata = await response.json();
 
@@ -265,10 +279,11 @@ export async function fetchWalletCards(
     } catch (error) {
       console.error(`Failed to fetch card ${i}:`, error);
     }
-    onProgress?.(cards.length, balance);
+    loadedCount++;
+    onProgress?.(loadedCount, balance);
   });
 
-  await Promise.all(metadataPromises);
+  await Promise.allSettled(metadataPromises);
 
   return cards;
 }

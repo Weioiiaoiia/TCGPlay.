@@ -1,13 +1,16 @@
 /**
  * Card Vault - Connect wallet, fetch on-chain Renaiss NFT cards
  * Displays real card data from BNB Smart Chain
+ *
+ * v2: Wallet persistence (localStorage), faster loading with cache,
+ *     PSA serial number verification button
  */
 import AppNav from "@/components/AppNav";
 import FoggyBg from "@/components/FoggyBg";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Search,
   Filter,
@@ -21,6 +24,7 @@ import {
   X,
   Copy,
   Check,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -33,10 +37,48 @@ import { useT } from "@/i18n";
 
 type ViewMode = "grid" | "list";
 
+// ── localStorage persistence helpers ──
+const VAULT_STORAGE_PREFIX = "tcgplay-vault-";
+
+function getVaultStorageKey(userId: string): string {
+  return `${VAULT_STORAGE_PREFIX}${userId}`;
+}
+
+interface VaultPersistData {
+  walletAddress: string;
+  cards: RenaisCard[];
+  timestamp: number;
+}
+
+function loadVaultData(userId: string): VaultPersistData | null {
+  try {
+    const raw = localStorage.getItem(getVaultStorageKey(userId));
+    if (raw) {
+      return JSON.parse(raw) as VaultPersistData;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+}
+
+function saveVaultData(userId: string, data: VaultPersistData): void {
+  try {
+    localStorage.setItem(getVaultStorageKey(userId), JSON.stringify(data));
+  } catch {
+    // localStorage might be full, silently fail
+  }
+}
+
+function clearVaultData(userId: string): void {
+  localStorage.removeItem(getVaultStorageKey(userId));
+}
+
 export default function CardVault() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const [, setLocation] = useLocation();
   const t = useT();
+  const userId = user?.id || "";
 
   // Wallet state
   const [walletAddress, setWalletAddress] = useState("");
@@ -55,9 +97,44 @@ export default function CardVault() {
   const [selectedCard, setSelectedCard] = useState<RenaisCard | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Track if we already restored from cache
+  const restoredRef = useRef(false);
+
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
   }, [isLoggedIn, setLocation]);
+
+  // ── Restore wallet connection from localStorage on mount ──
+  useEffect(() => {
+    if (!userId || restoredRef.current) return;
+    restoredRef.current = true;
+
+    const saved = loadVaultData(userId);
+    if (saved && saved.walletAddress && saved.cards.length > 0) {
+      setWalletAddress(saved.walletAddress);
+      setCards(saved.cards);
+      setWalletConnected(true);
+
+      // Background refresh: silently re-fetch cards to get latest data
+      // but show cached data immediately (instant load)
+      fetchWalletCards(saved.walletAddress, (loaded, total) => {
+        // silent progress, no UI update needed
+      })
+        .then((freshCards) => {
+          if (freshCards.length > 0) {
+            setCards(freshCards);
+            saveVaultData(userId, {
+              walletAddress: saved.walletAddress,
+              cards: freshCards,
+              timestamp: Date.now(),
+            });
+          }
+        })
+        .catch(() => {
+          // Keep cached data on refresh failure
+        });
+    }
+  }, [userId]);
 
   const handleConnectWallet = useCallback(async () => {
     const trimmed = walletAddress.trim();
@@ -83,6 +160,15 @@ export default function CardVault() {
       setCards(result);
       setWalletConnected(true);
 
+      // Persist to localStorage
+      if (userId) {
+        saveVaultData(userId, {
+          walletAddress: trimmed,
+          cards: result,
+          timestamp: Date.now(),
+        });
+      }
+
       if (result.length === 0) {
         toast.info(t("vault.noCardsFound"));
       } else {
@@ -95,7 +181,7 @@ export default function CardVault() {
     } finally {
       setLoading(false);
     }
-  }, [walletAddress, t]);
+  }, [walletAddress, t, userId]);
 
   const handleDisconnect = () => {
     setWalletConnected(false);
@@ -103,6 +189,10 @@ export default function CardVault() {
     setWalletAddress("");
     setSelectedCard(null);
     setFetchError("");
+    // Clear persisted data
+    if (userId) {
+      clearVaultData(userId);
+    }
   };
 
   const handleCopyAddress = async () => {
@@ -276,7 +366,7 @@ export default function CardVault() {
                 </div>
               </div>
 
-              {/* Search and view controls */}
+              {/* Search & View Toggle */}
               {cards.length > 0 && (
                 <div className="glass-card p-4 mb-6 flex flex-col md:flex-row items-center gap-4">
                   <div className="flex-1 flex items-center gap-2 bg-white/5 rounded-xl px-4 py-2.5 border border-white/10 w-full">
@@ -437,7 +527,7 @@ function CardGridItem({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: 0.05 * index }}
+      transition={{ duration: 0.4, delay: 0.05 * Math.min(index, 8) }}
     >
       <div
         onClick={onClick}
@@ -499,7 +589,7 @@ function CardListItem({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: 0.03 * index }}
+      transition={{ duration: 0.3, delay: 0.03 * Math.min(index, 10) }}
     >
       <div
         onClick={onClick}
@@ -561,6 +651,11 @@ function CardDetailModal({
   const grader = getCardAttribute(card.metadata, "Grader");
   const language = getCardAttribute(card.metadata, "Language");
   const cardNumber = getCardAttribute(card.metadata, "Card Number");
+
+  // Build PSA verification URL from serial number
+  const psaVerifyUrl = serial
+    ? `https://www.psacard.com/cert/${serial}`
+    : null;
 
   return (
     <motion.div
@@ -712,16 +807,39 @@ function CardDetailModal({
               </div>
             </div>
 
-            {/* Action button - link to Renaiss */}
-            <a
-              href={card.renaisUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-purple-gradient text-sm px-6 py-3 w-full flex items-center justify-center gap-2 no-underline"
-            >
-              <ExternalLink className="w-4 h-4" />
-              {t("vault.viewOnRenaiss")}
-            </a>
+            {/* Action buttons */}
+            <div className="space-y-3">
+              {/* PSA Verification Button */}
+              {psaVerifyUrl && (
+                <a
+                  href={psaVerifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full text-center py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-110 no-underline"
+                  style={{
+                    background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+                    color: "#ffffff",
+                    boxShadow: "0 4px 16px rgba(34,197,94,0.3)",
+                  }}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <ShieldCheck className="w-4 h-4" />
+                    {t("vault.psaVerify")}
+                  </span>
+                </a>
+              )}
+
+              {/* View on Renaiss Button */}
+              <a
+                href={card.renaisUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-purple-gradient text-sm px-6 py-3 w-full flex items-center justify-center gap-2 no-underline"
+              >
+                <ExternalLink className="w-4 h-4" />
+                {t("vault.viewOnRenaiss")}
+              </a>
+            </div>
 
             <p className="text-white/15 text-[10px] mt-3 text-center font-heading">
               {t("vault.opensRenaiss")}

@@ -104,6 +104,8 @@ const en = {
   "vault.onChainInfo": "On-Chain Info",
   "vault.tokenId": "Token ID",
   "vault.originalOwner": "Original Owner",
+  "vault.psaVerify": "PSA Cert Verification",
+  "vault.psaVerifyDesc": "Verify this card's serial number on PSA official website",
 
   // ===== 3D Space =====
   "threeD.title": "3D Space",
@@ -262,6 +264,8 @@ const cn: typeof en = {
   "vault.onChainInfo": "链上信息",
   "vault.tokenId": "Token ID",
   "vault.originalOwner": "原始持有者",
+  "vault.psaVerify": "PSA 序列号验证",
+  "vault.psaVerifyDesc": "在 PSA 官网验证此卡牌的序列号",
 
   // ===== 3D空间 =====
   "threeD.title": "3D 空间",
@@ -420,6 +424,8 @@ const jp: typeof en = {
   "vault.onChainInfo": "オンチェーン情報",
   "vault.tokenId": "トークン ID",
   "vault.originalOwner": "オリジナルオーナー",
+  "vault.psaVerify": "PSA シリアル認証",
+  "vault.psaVerifyDesc": "PSA 公式サイトでこのカードのシリアル番号を検証",
 
   // ===== 3D空間 =====
   "threeD.title": "3D 空間",
@@ -578,6 +584,8 @@ const kr: typeof en = {
   "vault.onChainInfo": "온체인 정보",
   "vault.tokenId": "토큰 ID",
   "vault.originalOwner": "원래 소유자",
+  "vault.psaVerify": "PSA 시리얼 인증",
+  "vault.psaVerifyDesc": "PSA 공식 웹사이트에서 이 카드의 시리얼 번호를 검증",
 
   // ===== 3D 공간 =====
   "threeD.title": "3D 공간",
