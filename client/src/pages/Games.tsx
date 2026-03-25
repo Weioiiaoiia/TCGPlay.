@@ -21,6 +21,8 @@ export default function Games() {
       gradient: "from-purple-600/30 to-pink-600/30",
       border: "border-purple-500/30",
       iconColor: "text-purple-400",
+      action: () => toast.info(t("games.comingSoonToast")),
+      status: "coming-soon" as const,
     },
     {
       title: t("games.cardRace"),
@@ -29,6 +31,8 @@ export default function Games() {
       gradient: "from-green-600/30 to-emerald-600/30",
       border: "border-green-500/30",
       iconColor: "text-green-400",
+      action: () => setLocation("/card-race"),
+      status: "live" as const,
     },
     {
       title: t("games.gashapon"),
@@ -37,6 +41,8 @@ export default function Games() {
       gradient: "from-pink-600/30 to-rose-600/30",
       border: "border-pink-500/30",
       iconColor: "text-pink-400",
+      action: () => toast.info(t("games.comingSoonToast")),
+      status: "coming-soon" as const,
     },
   ];
 
@@ -65,7 +71,7 @@ export default function Games() {
                 transition={{ duration: 0.5, delay: i * 0.15 }}
               >
                 <button
-                  onClick={() => toast.info(t("games.comingSoonToast"))}
+                  onClick={game.action}
                   className="w-full text-left"
                 >
                   <div className={`glass-card glass-card-hover p-8 h-full border ${game.border} group relative overflow-hidden`}>
@@ -76,10 +82,17 @@ export default function Games() {
                       </div>
                       <h3 className="text-white font-heading font-semibold text-xl mb-3">{game.title}</h3>
                       <p className="text-white/50 text-sm font-heading leading-relaxed mb-6">{game.desc}</p>
-                      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
-                        <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                        <span className="text-white/60 font-heading text-xs">{t("games.comingSoon")}</span>
-                      </div>
+                      {game.status === "live" ? (
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 border border-green-500/30">
+                          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                          <span className="text-green-400 font-heading text-xs font-semibold">Play Now</span>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
+                          <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                          <span className="text-white/60 font-heading text-xs">{t("games.comingSoon")}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </button>

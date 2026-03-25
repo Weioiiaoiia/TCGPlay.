@@ -43,7 +43,7 @@ export default function Dashboard() {
     {
       title: t("dashboard.cardRace"),
       desc: t("dashboard.cardRaceDesc"),
-      path: "/games",
+      path: "/card-race",
       icon: Car,
       gradient: "from-green-500/20 to-emerald-600/10",
       border: "border-green-500/20",
