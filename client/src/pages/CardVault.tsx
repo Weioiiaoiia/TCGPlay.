@@ -10,7 +10,7 @@ import FoggyBg from "@/components/FoggyBg";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   Search,
   Filter,
@@ -25,6 +25,7 @@ import {
   Copy,
   Check,
   ShieldCheck,
+  ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -635,6 +636,99 @@ function CardListItem({
   );
 }
 
+/* ============ Image Magnifier Component ============ */
+function ImageMagnifier({
+  src,
+  alt,
+  zoomLevel = 2.5,
+}: {
+  src: string;
+  alt: string;
+  zoomLevel?: number;
+}) {
+  const [showMagnifier, setShowMagnifier] = useState(false);
+  const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
+  const [imgNaturalSize, setImgNaturalSize] = useState({ w: 0, h: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const MAGNIFIER_SIZE = 140; // diameter in px
+
+  const handleMouseEnter = () => {
+    setShowMagnifier(true);
+  };
+
+  const handleMouseLeave = () => {
+    setShowMagnifier(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    // Cursor position relative to the container
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setMagnifierPos({ x, y });
+  };
+
+  const handleImageLoad = () => {
+    if (imgRef.current) {
+      setImgNaturalSize({
+        w: imgRef.current.naturalWidth,
+        h: imgRef.current.naturalHeight,
+      });
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative cursor-crosshair"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onMouseMove={handleMouseMove}
+    >
+      <img
+        ref={imgRef}
+        src={src}
+        alt={alt}
+        className="max-w-full max-h-[400px] object-contain rounded-lg"
+        onLoad={handleImageLoad}
+      />
+
+      {/* Magnifier hint icon */}
+      {!showMagnifier && (
+        <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-1 pointer-events-none">
+          <ZoomIn className="w-3.5 h-3.5 text-white/60" />
+          <span className="text-white/60 text-[10px] font-heading">Hover to zoom</span>
+        </div>
+      )}
+
+      {/* Magnifier lens */}
+      {showMagnifier && imgRef.current && (
+        <div
+          className="absolute pointer-events-none border-2 border-white/40 rounded-full shadow-lg shadow-black/50"
+          style={{
+            width: `${MAGNIFIER_SIZE}px`,
+            height: `${MAGNIFIER_SIZE}px`,
+            left: `${magnifierPos.x - MAGNIFIER_SIZE / 2}px`,
+            top: `${magnifierPos.y - MAGNIFIER_SIZE / 2}px`,
+            backgroundImage: `url('${src}')`,
+            backgroundRepeat: "no-repeat",
+            backgroundSize: `${imgRef.current.clientWidth * zoomLevel}px ${imgRef.current.clientHeight * zoomLevel}px`,
+            backgroundPositionX: `${-magnifierPos.x * zoomLevel + MAGNIFIER_SIZE / 2}px`,
+            backgroundPositionY: `${-magnifierPos.y * zoomLevel + MAGNIFIER_SIZE / 2}px`,
+            zIndex: 20,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /* ============ Card Detail Modal ============ */
 function CardDetailModal({
   card,
@@ -686,12 +780,12 @@ function CardDetailModal({
         </button>
 
         <div className="flex flex-col md:flex-row">
-          {/* Card Image */}
+          {/* Card Image with Magnifier */}
           <div className="md:w-[280px] flex-shrink-0 bg-black/30 p-6 flex items-center justify-center">
-            <img
+            <ImageMagnifier
               src={card.metadata.image}
               alt={card.metadata.name}
-              className="max-w-full max-h-[400px] object-contain rounded-lg"
+              zoomLevel={2.5}
             />
           </div>
 
