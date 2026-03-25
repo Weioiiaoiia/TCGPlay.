@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, Heart, AlertTriangle } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { useT } from "@/i18n";
 
 const chartData = [
   { month: "Jan", value: 200 },
@@ -22,63 +23,68 @@ const chartData = [
   { month: "Dec", value: 1100 },
 ];
 
-const periods = ["30 Days", "1 Year", "All Time"];
-
-const summaryCards = [
-  {
-    title: "Best Purchase",
-    icon: TrendingUp,
-    iconColor: "text-green-400",
-    content: (
-      <div>
-        <p className="text-green-400 font-heading font-semibold text-lg">+450% Value</p>
-        <p className="text-white/60 text-sm font-heading mt-1">Bought: $20</p>
-        <p className="text-white/60 text-sm font-heading">Now: $110</p>
-      </div>
-    ),
-  },
-  {
-    title: "Biggest Loss",
-    icon: TrendingDown,
-    iconColor: "text-red-400",
-    content: (
-      <div>
-        <p className="text-red-400 font-heading font-semibold text-lg">Lost: $35</p>
-        <p className="text-white/60 text-sm font-heading mt-1">Bought: $80</p>
-        <p className="text-white/60 text-sm font-heading">Now: $45</p>
-      </div>
-    ),
-  },
-  {
-    title: "Longest Held",
-    icon: Heart,
-    iconColor: "text-pink-400",
-    content: (
-      <div>
-        <p className="text-white font-heading font-semibold text-lg">847 days</p>
-        <p className="text-white/60 text-sm font-heading mt-1">Since May 2023</p>
-        <p className="text-white/60 text-sm font-heading">Value: $120</p>
-      </div>
-    ),
-  },
-  {
-    title: "Sold Too Early",
-    icon: AlertTriangle,
-    iconColor: "text-yellow-400",
-    content: (
-      <div>
-        <p className="text-yellow-400 font-heading font-semibold text-sm">Oops! Missed +200%</p>
-        <p className="text-white/60 text-sm font-heading mt-1">Sold: $50 &nbsp; Now: $150</p>
-        <p className="text-white/60 text-sm font-heading">Difference: $100</p>
-      </div>
-    ),
-  },
-];
-
 export default function Summary() {
   const { isLoggedIn } = useAuth();
   const [, setLocation] = useLocation();
-  const [activePeriod, setActivePeriod] = useState("1 Year");
+  const [activePeriod, setActivePeriod] = useState("1year");
+  const t = useT();
+
+  const periods = [
+    { key: "30days", label: t("summary.30days") },
+    { key: "1year", label: t("summary.1year") },
+    { key: "allTime", label: t("summary.allTime") },
+  ];
+
+  const summaryCards = [
+    {
+      title: t("summary.bestPurchase"),
+      icon: TrendingUp,
+      iconColor: "text-green-400",
+      content: (
+        <div>
+          <p className="text-green-400 font-heading font-semibold text-lg">{t("summary.value")}</p>
+          <p className="text-white/60 text-sm font-heading mt-1">{t("summary.bought", { amount: "20" })}</p>
+          <p className="text-white/60 text-sm font-heading">{t("summary.now", { amount: "110" })}</p>
+        </div>
+      ),
+    },
+    {
+      title: t("summary.biggestLoss"),
+      icon: TrendingDown,
+      iconColor: "text-red-400",
+      content: (
+        <div>
+          <p className="text-red-400 font-heading font-semibold text-lg">{t("summary.lost", { amount: "35" })}</p>
+          <p className="text-white/60 text-sm font-heading mt-1">{t("summary.bought", { amount: "80" })}</p>
+          <p className="text-white/60 text-sm font-heading">{t("summary.now", { amount: "45" })}</p>
+        </div>
+      ),
+    },
+    {
+      title: t("summary.longestHeld"),
+      icon: Heart,
+      iconColor: "text-pink-400",
+      content: (
+        <div>
+          <p className="text-white font-heading font-semibold text-lg">{t("summary.days", { count: "847" })}</p>
+          <p className="text-white/60 text-sm font-heading mt-1">{t("summary.since")}</p>
+          <p className="text-white/60 text-sm font-heading">{t("summary.cardValue", { amount: "120" })}</p>
+        </div>
+      ),
+    },
+    {
+      title: t("summary.soldTooEarly"),
+      icon: AlertTriangle,
+      iconColor: "text-yellow-400",
+      content: (
+        <div>
+          <p className="text-yellow-400 font-heading font-semibold text-sm">{t("summary.missedGain")}</p>
+          <p className="text-white/60 text-sm font-heading mt-1">{t("summary.sold", { sold: "50", now: "150" })}</p>
+          <p className="text-white/60 text-sm font-heading">{t("summary.difference", { amount: "100" })}</p>
+        </div>
+      ),
+    },
+  ];
 
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
@@ -95,20 +101,20 @@ export default function Summary() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
           <div className="text-center mb-8">
             <h1 className="font-display text-4xl md:text-5xl font-bold text-white mb-4">
-              My Card Journey 2026
+              {t("summary.title")}
             </h1>
             <div className="inline-flex items-center gap-2 p-1 rounded-full bg-white/5 border border-white/10">
               {periods.map((p) => (
                 <button
-                  key={p}
-                  onClick={() => setActivePeriod(p)}
+                  key={p.key}
+                  onClick={() => setActivePeriod(p.key)}
                   className={`px-5 py-2 rounded-full text-sm font-heading transition-all duration-300 ${
-                    activePeriod === p
+                    activePeriod === p.key
                       ? "bg-white/15 text-white border border-white/20"
                       : "text-white/50 hover:text-white/80"
                   }`}
                 >
-                  {p}
+                  {p.label}
                 </button>
               ))}
             </div>
@@ -164,7 +170,7 @@ export default function Summary() {
           <div className="text-center mt-6">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
               <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-              <span className="text-white/50 font-heading text-xs">Full summary features coming soon</span>
+              <span className="text-white/50 font-heading text-xs">{t("summary.featureComingSoon")}</span>
             </div>
           </div>
         </motion.div>

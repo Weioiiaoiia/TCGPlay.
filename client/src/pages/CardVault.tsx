@@ -29,12 +29,14 @@ import {
   getCardAttribute,
   type RenaisCard,
 } from "@/lib/renaiss";
+import { useT } from "@/i18n";
 
 type ViewMode = "grid" | "list";
 
 export default function CardVault() {
   const { isLoggedIn } = useAuth();
   const [, setLocation] = useLocation();
+  const t = useT();
 
   // Wallet state
   const [walletAddress, setWalletAddress] = useState("");
@@ -60,11 +62,11 @@ export default function CardVault() {
   const handleConnectWallet = useCallback(async () => {
     const trimmed = walletAddress.trim();
     if (!trimmed) {
-      setInputError("Please enter a wallet address");
+      setInputError(t("vault.enterAddress"));
       return;
     }
     if (!isValidAddress(trimmed)) {
-      setInputError("Invalid wallet address format (must be 0x followed by 40 hex characters)");
+      setInputError(t("vault.invalidAddress"));
       return;
     }
 
@@ -82,18 +84,18 @@ export default function CardVault() {
       setWalletConnected(true);
 
       if (result.length === 0) {
-        toast.info("No Renaiss cards found in this wallet");
+        toast.info(t("vault.noCardsFound"));
       } else {
-        toast.success(`Found ${result.length} Renaiss card${result.length > 1 ? "s" : ""}!`);
+        toast.success(t("vault.foundCards", { count: result.length }));
       }
     } catch (error: any) {
       console.error("Failed to fetch cards:", error);
       setFetchError(error.message || "Failed to fetch cards from blockchain");
-      toast.error("Failed to load cards. Please try again.");
+      toast.error(t("vault.failedLoad"));
     } finally {
       setLoading(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, t]);
 
   const handleDisconnect = () => {
     setWalletConnected(false);
@@ -137,7 +139,7 @@ export default function CardVault() {
           transition={{ duration: 0.5 }}
         >
           <div className="flex items-center justify-between mb-6">
-            <h1 className="font-display text-3xl font-bold text-white">Card Vault</h1>
+            <h1 className="font-display text-3xl font-bold text-white">{t("vault.title")}</h1>
             {walletConnected && (
               <button
                 onClick={handleDisconnect}
@@ -165,11 +167,10 @@ export default function CardVault() {
                   <Wallet className="w-10 h-10 text-purple-400" />
                 </div>
                 <h2 className="font-heading text-xl font-semibold text-white mb-3">
-                  Connect Your Wallet
+                  {t("vault.connectWallet")}
                 </h2>
                 <p className="text-white/40 text-sm font-heading mb-8 leading-relaxed">
-                  Enter your wallet address to view your Renaiss card collection.
-                  All card data is fetched directly from the BNB Smart Chain.
+                  {t("vault.connectDesc")}
                 </p>
 
                 {/* Wallet address input */}
@@ -213,7 +214,7 @@ export default function CardVault() {
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading Cards
+                      {t("vault.loadingCards")}
                       {loadProgress.total > 0 && (
                         <span>
                           ({loadProgress.loaded}/{loadProgress.total})
@@ -221,7 +222,7 @@ export default function CardVault() {
                       )}
                     </>
                   ) : (
-                    "Load My Cards"
+                    t("vault.loadCards")
                   )}
                 </button>
 
@@ -234,9 +235,9 @@ export default function CardVault() {
 
                 {/* Hint */}
                 <p className="text-white/20 text-[11px] mt-6 font-heading leading-relaxed">
-                  Only Renaiss Protocol ERC-721 cards on BNB Smart Chain are displayed.
+                  {t("vault.erc721Note")}
                   <br />
-                  Contract: 0xF864...5b30
+                  {t("vault.contract")}: 0xF864...5b30
                 </p>
               </motion.div>
             </div>
@@ -251,7 +252,7 @@ export default function CardVault() {
                   </div>
                   <div>
                     <p className="text-white/40 text-[11px] font-heading uppercase tracking-wider">
-                      Connected Wallet
+                      {t("vault.connectedWallet")}
                     </p>
                     <div className="flex items-center gap-2">
                       <p className="text-white/80 text-sm font-mono">
@@ -270,9 +271,8 @@ export default function CardVault() {
                     </div>
                   </div>
                 </div>
-                <div className="text-sm font-heading text-white/50">
-                  <span className="text-white font-semibold">{cards.length}</span> card
-                  {cards.length !== 1 ? "s" : ""} found
+                <div className="text-sm font-heading text-white/60">
+                  {t("vault.cardsFound", { count: cards.length })}
                 </div>
               </div>
 
@@ -285,7 +285,7 @@ export default function CardVault() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search cards by name, set, serial..."
+                      placeholder={t("vault.searchPlaceholder")}
                       className="bg-transparent text-white text-sm outline-none w-full placeholder:text-white/30 font-heading"
                     />
                     {searchQuery && (
@@ -326,17 +326,17 @@ export default function CardVault() {
               {cards.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">Total Cards</p>
+                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.totalCards")}</p>
                     <p className="text-white font-heading font-semibold text-lg">{cards.length}</p>
                   </div>
                   <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">Collections</p>
+                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.collections")}</p>
                     <p className="text-white font-heading font-semibold text-lg">
                       {new Set(cards.map((c) => c.metadata.collection_name)).size}
                     </p>
                   </div>
                   <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">Highest Grade</p>
+                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.highestGrade")}</p>
                     <p className="text-white font-heading font-semibold text-lg">
                       {cards.length > 0
                         ? getCardAttribute(cards[0].metadata, "Grade") || "--"
@@ -344,7 +344,7 @@ export default function CardVault() {
                     </p>
                   </div>
                   <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">Chain</p>
+                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.chain")}</p>
                     <p className="text-white font-heading font-semibold text-lg">BSC</p>
                   </div>
                 </div>
@@ -378,9 +378,9 @@ export default function CardVault() {
               ) : cards.length > 0 && searchQuery ? (
                 <div className="glass-card p-16 text-center">
                   <Search className="w-8 h-8 text-white/20 mx-auto mb-4" />
-                  <h3 className="text-white/60 font-heading text-lg mb-2">No Results</h3>
+                  <h3 className="text-white/60 font-heading text-lg mb-2">{t("vault.noResults")}</h3>
                   <p className="text-white/30 text-sm font-heading">
-                    No cards match "{searchQuery}"
+                    {t("vault.noMatch", { query: searchQuery })}
                   </p>
                 </div>
               ) : cards.length === 0 ? (
@@ -388,9 +388,9 @@ export default function CardVault() {
                   <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4">
                     <Wallet className="w-8 h-8 text-white/30" />
                   </div>
-                  <h3 className="text-white/60 font-heading text-lg mb-2">No Renaiss Cards Found</h3>
+                  <h3 className="text-white/60 font-heading text-lg mb-2">{t("vault.noRenaisCards")}</h3>
                   <p className="text-white/30 text-sm font-heading">
-                    This wallet does not hold any Renaiss ERC-721 NFT cards on BNB Smart Chain.
+                    {t("vault.noRenaisCardsDesc")}
                   </p>
                 </div>
               ) : null}
@@ -400,8 +400,7 @@ export default function CardVault() {
           {/* Disclaimer */}
           <div className="text-center mt-8">
             <p className="text-white/20 text-xs font-heading leading-relaxed">
-              Disclaimer: TCGPlay is a community entertainment free game. Card images sourced from
-              Renaiss on-chain assets.
+              {t("vault.disclaimer")}
             </p>
           </div>
         </motion.div>
@@ -432,6 +431,7 @@ function CardGridItem({
 }) {
   const grade = getCardAttribute(card.metadata, "Grade");
   const serial = getCardAttribute(card.metadata, "Serial");
+  const t = useT();
 
   return (
     <motion.div
@@ -471,7 +471,7 @@ function CardGridItem({
               <span className="text-white/30 text-[11px] font-mono">{serial}</span>
             )}
             <span className="text-purple-400/60 text-[11px] font-heading flex items-center gap-1 group-hover:text-purple-400 transition-colors">
-              Details <ExternalLink className="w-3 h-3" />
+              {t("vault.details")} <ExternalLink className="w-3 h-3" />
             </span>
           </div>
         </div>
@@ -553,6 +553,7 @@ function CardDetailModal({
   card: RenaisCard;
   onClose: () => void;
 }) {
+  const t = useT();
   const grade = getCardAttribute(card.metadata, "Grade");
   const serial = getCardAttribute(card.metadata, "Serial");
   const year = getCardAttribute(card.metadata, "Year");
@@ -617,7 +618,7 @@ function CardDetailModal({
               {grader && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Grader
+                    {t("vault.grader")}
                   </p>
                   <p className="text-white/80 text-sm font-heading font-medium">{grader}</p>
                 </div>
@@ -625,7 +626,7 @@ function CardDetailModal({
               {grade && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Grade
+                    {t("vault.grade")}
                   </p>
                   <p className="text-amber-400 text-sm font-heading font-medium">{grade}</p>
                 </div>
@@ -633,7 +634,7 @@ function CardDetailModal({
               {serial && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Serial
+                    {t("vault.serial")}
                   </p>
                   <p className="text-white/80 text-sm font-mono">{serial}</p>
                 </div>
@@ -641,7 +642,7 @@ function CardDetailModal({
               {year && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Year
+                    {t("vault.year")}
                   </p>
                   <p className="text-white/80 text-sm font-heading font-medium">{year}</p>
                 </div>
@@ -649,7 +650,7 @@ function CardDetailModal({
               {set && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5 col-span-2">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Set
+                    {t("vault.set")}
                   </p>
                   <p className="text-white/80 text-sm font-heading font-medium">{set}</p>
                 </div>
@@ -657,7 +658,7 @@ function CardDetailModal({
               {language && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Language
+                    {t("vault.language")}
                   </p>
                   <p className="text-white/80 text-sm font-heading font-medium">{language}</p>
                 </div>
@@ -665,7 +666,7 @@ function CardDetailModal({
               {cardNumber && (
                 <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    Card Number
+                    {t("vault.cardNumber")}
                   </p>
                   <p className="text-white/80 text-sm font-heading font-medium">#{cardNumber}</p>
                 </div>
@@ -675,17 +676,17 @@ function CardDetailModal({
             {/* Token info */}
             <div className="bg-white/[0.03] rounded-xl p-4 border border-white/5 mb-6">
               <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-2">
-                On-Chain Info
+                {t("vault.onChainInfo")}
               </p>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-white/30 text-xs font-heading">Chain</span>
+                  <span className="text-white/30 text-xs font-heading">{t("vault.chain")}</span>
                   <span className="text-white/60 text-xs font-heading">
                     {card.metadata.token_info?.chain || "BSC Mainnet"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-white/30 text-xs font-heading">Contract</span>
+                  <span className="text-white/30 text-xs font-heading">{t("vault.contract")}</span>
                   <span className="text-white/60 text-xs font-mono">
                     {card.metadata.token_info?.contract_address
                       ? `${card.metadata.token_info.contract_address.slice(0, 6)}...${card.metadata.token_info.contract_address.slice(-4)}`
@@ -693,7 +694,7 @@ function CardDetailModal({
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-white/30 text-xs font-heading">Token ID</span>
+                  <span className="text-white/30 text-xs font-heading">{t("vault.tokenId")}</span>
                   <span className="text-white/60 text-xs font-mono">
                     {card.tokenId.length > 16
                       ? `${card.tokenId.slice(0, 8)}...${card.tokenId.slice(-8)}`
@@ -702,7 +703,7 @@ function CardDetailModal({
                 </div>
                 {card.metadata.item_info?.original_owner?.username && (
                   <div className="flex items-center justify-between">
-                    <span className="text-white/30 text-xs font-heading">Original Owner</span>
+                    <span className="text-white/30 text-xs font-heading">{t("vault.originalOwner")}</span>
                     <span className="text-white/60 text-xs font-heading">
                       {card.metadata.item_info.original_owner.username}
                     </span>
@@ -719,11 +720,11 @@ function CardDetailModal({
               className="btn-purple-gradient text-sm px-6 py-3 w-full flex items-center justify-center gap-2 no-underline"
             >
               <ExternalLink className="w-4 h-4" />
-              View on Renaiss
+              {t("vault.viewOnRenaiss")}
             </a>
 
             <p className="text-white/15 text-[10px] mt-3 text-center font-heading">
-              Opens the official Renaiss card detail page
+              {t("vault.opensRenaiss")}
             </p>
           </div>
         </div>

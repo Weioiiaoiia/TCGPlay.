@@ -5,67 +5,69 @@ import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { Wallet, Box, Swords, Car, Disc3, BookOpen } from "lucide-react";
-
-const features = [
-  {
-    title: "Card Vault",
-    desc: "Securely store and manage your entire digital collection.",
-    path: "/card-vault",
-    icon: Wallet,
-    gradient: "from-amber-500/20 to-orange-600/10",
-    border: "border-amber-500/20",
-    iconColor: "text-amber-400",
-  },
-  {
-    title: "3D Mood Space",
-    desc: "Design and customize your personal immersive space.",
-    path: "/3d-space",
-    icon: Box,
-    gradient: "from-cyan-500/20 to-blue-600/10",
-    border: "border-cyan-500/20",
-    iconColor: "text-cyan-400",
-  },
-  {
-    title: "TCG Card Battle",
-    desc: "Challenge players in real-time strategy card games.",
-    path: "/games",
-    icon: Swords,
-    gradient: "from-purple-500/20 to-pink-600/10",
-    border: "border-purple-500/20",
-    iconColor: "text-purple-400",
-  },
-  {
-    title: "Card Race",
-    desc: "Compete in high-speed card-based racing events.",
-    path: "/games",
-    icon: Car,
-    gradient: "from-green-500/20 to-emerald-600/10",
-    border: "border-green-500/20",
-    iconColor: "text-green-400",
-  },
-  {
-    title: "Gashapon Machine",
-    desc: "Try your luck for rare cards and exclusive rewards.",
-    path: "/games",
-    icon: Disc3,
-    gradient: "from-pink-500/20 to-rose-600/10",
-    border: "border-pink-500/20",
-    iconColor: "text-pink-400",
-  },
-  {
-    title: "Card Album",
-    desc: "Curate and showcase your card sets in a digital album.",
-    path: "/album",
-    icon: BookOpen,
-    gradient: "from-indigo-500/20 to-violet-600/10",
-    border: "border-indigo-500/20",
-    iconColor: "text-indigo-400",
-  },
-];
+import { useT } from "@/i18n";
 
 export default function Dashboard() {
   const { isLoggedIn, user } = useAuth();
   const [, setLocation] = useLocation();
+  const t = useT();
+
+  const features = [
+    {
+      title: t("dashboard.cardVault"),
+      desc: t("dashboard.cardVaultDesc"),
+      path: "/card-vault",
+      icon: Wallet,
+      gradient: "from-amber-500/20 to-orange-600/10",
+      border: "border-amber-500/20",
+      iconColor: "text-amber-400",
+    },
+    {
+      title: t("dashboard.3dSpace"),
+      desc: t("dashboard.3dSpaceDesc"),
+      path: "/3d-space",
+      icon: Box,
+      gradient: "from-cyan-500/20 to-blue-600/10",
+      border: "border-cyan-500/20",
+      iconColor: "text-cyan-400",
+    },
+    {
+      title: t("dashboard.cardBattle"),
+      desc: t("dashboard.cardBattleDesc"),
+      path: "/games",
+      icon: Swords,
+      gradient: "from-purple-500/20 to-pink-600/10",
+      border: "border-purple-500/20",
+      iconColor: "text-purple-400",
+    },
+    {
+      title: t("dashboard.cardRace"),
+      desc: t("dashboard.cardRaceDesc"),
+      path: "/games",
+      icon: Car,
+      gradient: "from-green-500/20 to-emerald-600/10",
+      border: "border-green-500/20",
+      iconColor: "text-green-400",
+    },
+    {
+      title: t("dashboard.gashapon"),
+      desc: t("dashboard.gashaponDesc"),
+      path: "/games",
+      icon: Disc3,
+      gradient: "from-pink-500/20 to-rose-600/10",
+      border: "border-pink-500/20",
+      iconColor: "text-pink-400",
+    },
+    {
+      title: t("dashboard.cardAlbum"),
+      desc: t("dashboard.cardAlbumDesc"),
+      path: "/album",
+      icon: BookOpen,
+      gradient: "from-indigo-500/20 to-violet-600/10",
+      border: "border-indigo-500/20",
+      iconColor: "text-indigo-400",
+    },
+  ];
 
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
@@ -94,7 +96,7 @@ export default function Dashboard() {
             <div className="w-16 h-22 rounded-lg bg-gradient-to-br from-green-400/20 to-blue-400/20 border border-white/10 transform rotate-6 shadow-lg" />
           </div>
           <h1 className="font-display text-3xl md:text-4xl font-bold text-white relative z-10">
-            Welcome back, {user?.name}
+            {t("dashboard.welcome", { name: user?.name || "" })}
           </h1>
           <p className="text-white/40 font-mono text-sm mt-2 relative z-10">
             {user?.wallet}
@@ -138,7 +140,7 @@ export default function Dashboard() {
         {/* Footer */}
         <div className="text-center mt-12">
           <p className="text-white/20 text-xs font-heading">
-            &copy; 2026 TCGPlay. All rights reserved.
+            {t("dashboard.copyright")}
           </p>
         </div>
       </main>

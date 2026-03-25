@@ -3,22 +3,23 @@ import { Globe, Bell, User } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import Logo from "@/components/Logo";
-
-const navItems = [
-  { label: "Home", path: "/home" },
-  { label: "Card Vault", path: "/card-vault" },
-  { label: "3D Space", path: "/3d-space" },
-  { label: "Games", path: "/games" },
-  { label: "Album", path: "/album" },
-  { label: "Summary", path: "/summary" },
-];
+import { useLanguage, type Language } from "@/i18n";
 
 export default function AppNav() {
   const [location] = useLocation();
   const { logout } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const [langOpen, setLangOpen] = useState(false);
-  const [lang, setLang] = useState("EN");
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const navItems = [
+    { label: t("nav.home"), path: "/home" },
+    { label: t("nav.cardVault"), path: "/card-vault" },
+    { label: t("nav.3dSpace"), path: "/3d-space" },
+    { label: t("nav.games"), path: "/games" },
+    { label: t("nav.album"), path: "/album" },
+    { label: t("nav.summary"), path: "/summary" },
+  ];
 
   return (
     <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-[1300px]">
@@ -57,16 +58,16 @@ export default function AppNav() {
               className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors text-sm"
             >
               <Globe className="w-4 h-4" />
-              <span className="font-heading">{lang}</span>
+              <span className="font-heading">{language}</span>
             </button>
             {langOpen && (
               <div className="absolute top-full right-0 mt-2 glass-card p-2 min-w-[100px]">
-                {["CN", "EN", "JP", "KR"].map((l) => (
+                {(["CN", "EN", "JP", "KR"] as Language[]).map((l) => (
                   <button
                     key={l}
-                    onClick={() => { setLang(l); setLangOpen(false); }}
+                    onClick={() => { setLanguage(l); setLangOpen(false); }}
                     className={`block w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                      lang === l ? "text-white bg-white/10" : "text-white/60 hover:text-white hover:bg-white/5"
+                      language === l ? "text-white bg-white/10" : "text-white/60 hover:text-white hover:bg-white/5"
                     }`}
                   >
                     {l}
@@ -97,13 +98,13 @@ export default function AppNav() {
                   className="block px-3 py-2 rounded-lg text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors no-underline"
                   onClick={() => setProfileOpen(false)}
                 >
-                  My Profile
+                  {t("nav.myProfile")}
                 </Link>
                 <button
                   onClick={() => { logout(); setProfileOpen(false); window.location.href = "/"; }}
                   className="block w-full text-left px-3 py-2 rounded-lg text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 >
-                  Logout
+                  {t("nav.logout")}
                 </button>
               </div>
             )}

@@ -6,37 +6,39 @@ import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { Swords, Flag, CircleDot } from "lucide-react";
 import { toast } from "sonner";
-
-const games = [
-  {
-    title: "TCG Card Battle",
-    desc: "Challenge players in real-time strategy card games. Build your deck, plan your strategy, and dominate the arena.",
-    icon: Swords,
-    gradient: "from-purple-600/30 to-pink-600/30",
-    border: "border-purple-500/30",
-    iconColor: "text-purple-400",
-  },
-  {
-    title: "TCG Card Race",
-    desc: "Compete in high-speed card-based racing events. Use your cards wisely to boost speed and outrun opponents.",
-    icon: Flag,
-    gradient: "from-green-600/30 to-emerald-600/30",
-    border: "border-green-500/30",
-    iconColor: "text-green-400",
-  },
-  {
-    title: "Gashapon Machine",
-    desc: "Try your luck at the capsule machine! Collect rare cards and exclusive rewards with every pull.",
-    icon: CircleDot,
-    gradient: "from-pink-600/30 to-rose-600/30",
-    border: "border-pink-500/30",
-    iconColor: "text-pink-400",
-  },
-];
+import { useT } from "@/i18n";
 
 export default function Games() {
   const { isLoggedIn } = useAuth();
   const [, setLocation] = useLocation();
+  const t = useT();
+
+  const games = [
+    {
+      title: t("games.cardBattle"),
+      desc: t("games.cardBattleDesc"),
+      icon: Swords,
+      gradient: "from-purple-600/30 to-pink-600/30",
+      border: "border-purple-500/30",
+      iconColor: "text-purple-400",
+    },
+    {
+      title: t("games.cardRace"),
+      desc: t("games.cardRaceDesc"),
+      icon: Flag,
+      gradient: "from-green-600/30 to-emerald-600/30",
+      border: "border-green-500/30",
+      iconColor: "text-green-400",
+    },
+    {
+      title: t("games.gashapon"),
+      desc: t("games.gashaponDesc"),
+      icon: CircleDot,
+      gradient: "from-pink-600/30 to-rose-600/30",
+      border: "border-pink-500/30",
+      iconColor: "text-pink-400",
+    },
+  ];
 
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
@@ -51,19 +53,19 @@ export default function Games() {
 
       <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1200px] mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <h1 className="font-display text-3xl font-bold text-white mb-2">Games</h1>
-          <p className="text-white/50 font-heading mb-8">Choose your game and start playing</p>
+          <h1 className="font-display text-3xl font-bold text-white mb-2">{t("games.title")}</h1>
+          <p className="text-white/50 font-heading mb-8">{t("games.subtitle")}</p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {games.map((game, i) => (
               <motion.div
-                key={game.title}
+                key={i}
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: i * 0.15 }}
               >
                 <button
-                  onClick={() => toast.info("Coming Soon! This game is under development.")}
+                  onClick={() => toast.info(t("games.comingSoonToast"))}
                   className="w-full text-left"
                 >
                   <div className={`glass-card glass-card-hover p-8 h-full border ${game.border} group relative overflow-hidden`}>
@@ -76,7 +78,7 @@ export default function Games() {
                       <p className="text-white/50 text-sm font-heading leading-relaxed mb-6">{game.desc}</p>
                       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
                         <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                        <span className="text-white/60 font-heading text-xs">Coming Soon</span>
+                        <span className="text-white/60 font-heading text-xs">{t("games.comingSoon")}</span>
                       </div>
                     </div>
                   </div>

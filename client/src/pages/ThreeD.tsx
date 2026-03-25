@@ -5,10 +5,12 @@ import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { Box } from "lucide-react";
+import { useT } from "@/i18n";
 
 export default function ThreeD() {
   const { isLoggedIn } = useAuth();
   const [, setLocation] = useLocation();
+  const t = useT();
 
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
@@ -31,13 +33,13 @@ export default function ThreeD() {
           <div className="w-24 h-24 mx-auto mb-8 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 flex items-center justify-center">
             <Box className="w-12 h-12 text-cyan-400 animate-float" />
           </div>
-          <h1 className="font-display text-4xl font-bold text-white mb-4">3D Space</h1>
+          <h1 className="font-display text-4xl font-bold text-white mb-4">{t("threeD.title")}</h1>
           <p className="text-white/50 font-heading text-lg mb-8 max-w-md">
-            Design and customize your personal immersive 3D exhibition space.
+            {t("threeD.desc")}
           </p>
           <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10">
             <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-            <span className="text-white/60 font-heading text-sm">Coming Soon</span>
+            <span className="text-white/60 font-heading text-sm">{t("threeD.comingSoon")}</span>
           </div>
         </motion.div>
       </main>

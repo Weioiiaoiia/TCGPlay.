@@ -6,12 +6,13 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Plus, User } from "lucide-react";
 import { toast } from "sonner";
+import { useLanguage, type Language } from "@/i18n";
 
 export default function Profile() {
   const { isLoggedIn, user } = useAuth();
   const [, setLocation] = useLocation();
   const [displayName, setDisplayName] = useState("");
-  const [lang, setLang] = useState("EN");
+  const { language, setLanguage, t } = useLanguage();
 
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
@@ -26,12 +27,12 @@ export default function Profile() {
 
       <main className="relative z-10 pt-24 pb-16 px-4 max-w-[900px] mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <h1 className="font-display text-3xl font-bold text-white mb-8">My Profile</h1>
+          <h1 className="font-display text-3xl font-bold text-white mb-8">{t("profile.title")}</h1>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Avatar section */}
             <div className="glass-card p-8 text-center">
-              <h2 className="text-white font-heading font-semibold text-lg mb-6 text-left">Avatar</h2>
+              <h2 className="text-white font-heading font-semibold text-lg mb-6 text-left">{t("profile.avatar")}</h2>
               <div className="relative w-40 h-40 mx-auto mb-4">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-purple-500 p-[3px] animate-spin" style={{ animationDuration: "8s" }}>
                   <div className="w-full h-full rounded-full bg-[#0d0b1a]" />
@@ -43,18 +44,18 @@ export default function Profile() {
                   <Plus className="w-4 h-4 text-white" />
                 </button>
               </div>
-              <p className="text-white/40 text-sm font-heading">Upload your photo</p>
+              <p className="text-white/40 text-sm font-heading">{t("profile.uploadPhoto")}</p>
             </div>
 
             {/* Profile details */}
             <div className="glass-card p-8">
-              <h2 className="text-white font-heading font-semibold text-lg mb-6">Profile Details</h2>
+              <h2 className="text-white font-heading font-semibold text-lg mb-6">{t("profile.profileDetails")}</h2>
 
               <div className="mb-5">
-                <label className="text-white/70 text-sm font-heading block mb-2">Display Name</label>
+                <label className="text-white/70 text-sm font-heading block mb-2">{t("profile.displayName")}</label>
                 <input
                   type="text"
-                  placeholder="Enter your display name"
+                  placeholder={t("profile.displayNamePlaceholder")}
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none placeholder:text-white/30 font-heading focus:border-purple-500/40 transition-colors"
@@ -62,7 +63,7 @@ export default function Profile() {
               </div>
 
               <div className="mb-5">
-                <label className="text-white/70 text-sm font-heading block mb-2">Wallet Status</label>
+                <label className="text-white/70 text-sm font-heading block mb-2">{t("profile.walletStatus")}</label>
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
                   <span className="w-2.5 h-2.5 rounded-full bg-green-400" />
                   <span className="text-white/80 text-sm font-mono">{user?.wallet || "0x...e4F9a8"}</span>
@@ -70,14 +71,14 @@ export default function Profile() {
               </div>
 
               <div className="mb-6">
-                <label className="text-white/70 text-sm font-heading block mb-2">Language</label>
+                <label className="text-white/70 text-sm font-heading block mb-2">{t("profile.language")}</label>
                 <div className="flex items-center gap-2">
-                  {["CN", "EN", "JP", "KR"].map((l) => (
+                  {(["CN", "EN", "JP", "KR"] as Language[]).map((l) => (
                     <button
                       key={l}
-                      onClick={() => setLang(l)}
+                      onClick={() => setLanguage(l)}
                       className={`px-5 py-2 rounded-full text-sm font-heading transition-all duration-300 ${
-                        lang === l
+                        language === l
                           ? "bg-white/15 text-white border border-white/20"
                           : "text-white/40 bg-white/5 border border-white/10 hover:text-white/70"
                       }`}
@@ -89,11 +90,11 @@ export default function Profile() {
               </div>
 
               <button
-                onClick={() => toast.success("Profile saved!")}
+                onClick={() => toast.success(t("profile.saved"))}
                 className="w-full py-3 rounded-xl font-heading font-semibold text-white text-sm transition-all duration-300"
                 style={{ background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)" }}
               >
-                Save Changes
+                {t("profile.saveChanges")}
               </button>
             </div>
           </div>
