@@ -1,5 +1,5 @@
 import AppNav from "@/components/AppNav";
-import StarField from "@/components/StarField";
+import FoggyBg from "@/components/FoggyBg";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -7,9 +7,6 @@ import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, Heart, AlertTriangle } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
-const DASHBOARD_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663466251609/azZHMfkVbqxhqHw2ESyYVP/dashboard-bg-8ni7cofZ2v6EEBzuAsjAR3.webp";
-
-// Mock chart data
 const chartData = [
   { month: "Jan", value: 200 },
   { month: "Feb", value: 280 },
@@ -91,19 +88,15 @@ export default function Summary() {
 
   return (
     <div className="relative min-h-screen">
-      <div className="fixed inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: `url(${DASHBOARD_BG})` }} />
-      <div className="fixed inset-0 bg-black/50" />
-      <StarField />
+      <FoggyBg />
       <AppNav />
 
-      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1300px] mx-auto">
+      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1200px] mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          {/* Title */}
           <div className="text-center mb-8">
             <h1 className="font-display text-4xl md:text-5xl font-bold text-white mb-4">
-              My Card Journey 2025
+              My Card Journey 2026
             </h1>
-            {/* Period selector */}
             <div className="inline-flex items-center gap-2 p-1 rounded-full bg-white/5 border border-white/10">
               {periods.map((p) => (
                 <button
@@ -121,7 +114,6 @@ export default function Summary() {
             </div>
           </div>
 
-          {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             {summaryCards.map((card, i) => (
               <motion.div
@@ -140,7 +132,6 @@ export default function Summary() {
             ))}
           </div>
 
-          {/* Chart */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -155,39 +146,21 @@ export default function Summary() {
                     <stop offset="95%" stopColor="#a855f7" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "Inter" }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "Inter" }}
-                />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{
                     background: "rgba(20, 10, 40, 0.9)",
                     border: "1px solid rgba(255,255,255,0.1)",
                     borderRadius: "12px",
                     color: "white",
-                    fontFamily: "Inter",
                   }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#a855f7"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorValue)"
-                />
+                <Area type="monotone" dataKey="value" stroke="#a855f7" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
               </AreaChart>
             </ResponsiveContainer>
           </motion.div>
 
-          {/* Coming soon note */}
           <div className="text-center mt-6">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
               <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />

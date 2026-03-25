@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Globe, Bell, User } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import Logo from "@/components/Logo";
 
 const navItems = [
   { label: "Home", path: "/home" },
@@ -24,9 +25,7 @@ export default function AppNav() {
       <div className="glass-nav flex items-center justify-between px-6 py-3">
         {/* Logo */}
         <Link href="/home" className="flex items-center gap-2 no-underline">
-          <span className="font-display text-xl font-bold gold-shimmer tracking-wider">
-            TCGPlay
-          </span>
+          <Logo size="sm" />
         </Link>
 
         {/* Nav Links */}

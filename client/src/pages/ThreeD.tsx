@@ -1,12 +1,10 @@
 import AppNav from "@/components/AppNav";
-import StarField from "@/components/StarField";
+import FoggyBg from "@/components/FoggyBg";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { Box } from "lucide-react";
-
-const DASHBOARD_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663466251609/azZHMfkVbqxhqHw2ESyYVP/dashboard-bg-8ni7cofZ2v6EEBzuAsjAR3.webp";
 
 export default function ThreeD() {
   const { isLoggedIn } = useAuth();
@@ -20,12 +18,10 @@ export default function ThreeD() {
 
   return (
     <div className="relative min-h-screen">
-      <div className="fixed inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: `url(${DASHBOARD_BG})` }} />
-      <div className="fixed inset-0 bg-black/50" />
-      <StarField />
+      <FoggyBg />
       <AppNav />
 
-      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1300px] mx-auto flex flex-col items-center justify-center min-h-[80vh]">
+      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1200px] mx-auto flex flex-col items-center justify-center min-h-[80vh]">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}

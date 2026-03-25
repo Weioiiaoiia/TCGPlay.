@@ -1,5 +1,5 @@
 import AppNav from "@/components/AppNav";
-import StarField from "@/components/StarField";
+import FoggyBg from "@/components/FoggyBg";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -7,35 +7,30 @@ import { useEffect } from "react";
 import { Swords, Flag, CircleDot } from "lucide-react";
 import { toast } from "sonner";
 
-const DASHBOARD_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663466251609/azZHMfkVbqxhqHw2ESyYVP/dashboard-bg-8ni7cofZ2v6EEBzuAsjAR3.webp";
-
 const games = [
   {
     title: "TCG Card Battle",
     desc: "Challenge players in real-time strategy card games. Build your deck, plan your strategy, and dominate the arena.",
     icon: Swords,
     gradient: "from-purple-600/30 to-pink-600/30",
-    border: "border-purple-500/40",
+    border: "border-purple-500/30",
     iconColor: "text-purple-400",
-    status: "coming_soon",
   },
   {
     title: "TCG Card Race",
     desc: "Compete in high-speed card-based racing events. Use your cards wisely to boost speed and outrun opponents.",
     icon: Flag,
     gradient: "from-green-600/30 to-emerald-600/30",
-    border: "border-green-500/40",
+    border: "border-green-500/30",
     iconColor: "text-green-400",
-    status: "coming_soon",
   },
   {
     title: "Gashapon Machine",
     desc: "Try your luck at the capsule machine! Collect rare cards and exclusive rewards with every pull.",
     icon: CircleDot,
     gradient: "from-pink-600/30 to-rose-600/30",
-    border: "border-pink-500/40",
+    border: "border-pink-500/30",
     iconColor: "text-pink-400",
-    status: "coming_soon",
   },
 ];
 
@@ -51,12 +46,10 @@ export default function Games() {
 
   return (
     <div className="relative min-h-screen">
-      <div className="fixed inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: `url(${DASHBOARD_BG})` }} />
-      <div className="fixed inset-0 bg-black/50" />
-      <StarField />
+      <FoggyBg />
       <AppNav />
 
-      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1300px] mx-auto">
+      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1200px] mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
           <h1 className="font-display text-3xl font-bold text-white mb-2">Games</h1>
           <p className="text-white/50 font-heading mb-8">Choose your game and start playing</p>

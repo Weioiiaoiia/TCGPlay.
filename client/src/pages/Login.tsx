@@ -1,10 +1,9 @@
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import StarField from "@/components/StarField";
+import FoggyBg from "@/components/FoggyBg";
+import Logo from "@/components/Logo";
 import { motion } from "framer-motion";
 import { useState } from "react";
-
-const LOGIN_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663466251609/azZHMfkVbqxhqHw2ESyYVP/login-bg-G9i8MJZaLhttrc6KErhd4c.webp";
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,13 +17,7 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      {/* Background */}
-      <div
-        className="fixed inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${LOGIN_BG})` }}
-      />
-      <div className="fixed inset-0 bg-black/20" />
-      <StarField />
+      <FoggyBg />
 
       {/* Login Card */}
       <motion.div
@@ -35,9 +28,9 @@ export default function Login() {
       >
         <div className="glass-card p-10 text-center">
           {/* Logo */}
-          <h1 className="font-display text-4xl font-bold gold-shimmer mb-10 tracking-wider">
-            TCGPlay
-          </h1>
+          <div className="mb-10">
+            <Logo size="xl" />
+          </div>
 
           {/* Login buttons */}
           <div className="space-y-4">
