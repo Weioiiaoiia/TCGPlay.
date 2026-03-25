@@ -1595,15 +1595,26 @@ function ResultSection({ racers, onPlayAgain }: { racers: Racer[]; onPlayAgain: 
         )}
       </AnimatePresence>
 
-      {/* Play again */}
-      <motion.button
-        initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }}
-        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-        onClick={onPlayAgain}
-        className="gold-jelly-button text-sm px-10 py-3 rounded-2xl"
-      >
-        Race Again
-      </motion.button>
+      {/* Play again & Back to lobby */}
+      <div className="flex items-center gap-4 flex-wrap justify-center">
+        <motion.button
+          initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }}
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          onClick={onPlayAgain}
+          className="gold-jelly-button text-sm px-10 py-3 rounded-2xl"
+        >
+          Race Again
+        </motion.button>
+        <motion.button
+          initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.65 }}
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          onClick={() => window.location.href = "/home"}
+          className="text-sm px-10 py-3 rounded-2xl border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors backdrop-blur-sm"
+          style={{ background: "rgba(255,255,255,0.05)" }}
+        >
+          Back to Lobby
+        </motion.button>
+      </div>
     </motion.div>
   );
 }

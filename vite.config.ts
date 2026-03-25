@@ -181,15 +181,15 @@ export default defineConfig({
       "127.0.0.1",
     ],
     proxy: {
-      "/api/renaiss": {
-        target: "http://localhost:3001",
-        changeOrigin: true,
-      },
       "/api/renaiss-metadata": {
         target: "https://www.renaiss.xyz",
         changeOrigin: true,
         rewrite: (path: string) => path.replace(/^\/api\/renaiss-metadata/, "/index/token"),
         secure: true,
+      },
+      "/api/renaiss/": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
       },
       "/api/bsc-rpc": {
         target: "https://bsc-dataseed.binance.org",
