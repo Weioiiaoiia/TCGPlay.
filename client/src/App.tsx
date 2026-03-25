@@ -15,6 +15,7 @@ import Album from "./pages/Album";
 import Summary from "./pages/Summary";
 import Profile from "./pages/Profile";
 import { AuthProvider } from "./contexts/AuthContext";
+import { PrivyProvider } from "@privy-io/react-auth";
 
 function Router() {
   return (
@@ -37,16 +38,33 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
-        <LanguageProvider>
-          <AuthProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Router />
-            </TooltipProvider>
-          </AuthProvider>
-        </LanguageProvider>
-      </ThemeProvider>
+      <PrivyProvider
+        appId="cmmw1jfsf02ga0ckzqilwwn0l"
+        config={{
+          appearance: {
+            theme: "dark",
+            accentColor: "#a855f7",
+            logo: undefined,
+          },
+          loginMethods: ["google", "email", "twitter"],
+          embeddedWallets: {
+            ethereum: {
+              createOnLogin: "users-without-wallets",
+            },
+          },
+        }}
+      >
+        <ThemeProvider defaultTheme="dark">
+          <LanguageProvider>
+            <AuthProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Router />
+              </TooltipProvider>
+            </AuthProvider>
+          </LanguageProvider>
+        </ThemeProvider>
+      </PrivyProvider>
     </ErrorBoundary>
   );
 }

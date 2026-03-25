@@ -41,6 +41,12 @@ const en = {
   "login.google": "Continue with Google",
   "login.email": "Email Login",
   "login.x": "Continue with X",
+  "login.emailPlaceholder": "Enter your email address",
+  "login.sendCode": "Send Verification Code",
+  "login.codeSent": "Code sent to",
+  "login.codePlaceholder": "Enter 6-digit code",
+  "login.verify": "Verify & Login",
+  "login.back": "Back to login options",
 
   // ===== Dashboard =====
   "dashboard.welcome": "Welcome back, {name}",
@@ -156,6 +162,7 @@ const en = {
   "profile.displayName": "Display Name",
   "profile.displayNamePlaceholder": "Enter your display name",
   "profile.walletStatus": "Wallet Status",
+  "profile.account": "Account",
   "profile.language": "Language",
   "profile.saveChanges": "Save Changes",
   "profile.saved": "Profile saved!",
@@ -193,6 +200,12 @@ const cn: typeof en = {
   "login.google": "使用 Google 登录",
   "login.email": "邮箱登录",
   "login.x": "使用 X 登录",
+  "login.emailPlaceholder": "请输入您的邮箱地址",
+  "login.sendCode": "发送验证码",
+  "login.codeSent": "验证码已发送至",
+  "login.codePlaceholder": "输入6位验证码",
+  "login.verify": "验证并登录",
+  "login.back": "返回登录选项",
 
   // ===== 仪表盘 =====
   "dashboard.welcome": "欢迎回来，{name}",
@@ -307,6 +320,7 @@ const cn: typeof en = {
   "profile.displayName": "显示名称",
   "profile.displayNamePlaceholder": "输入您的显示名称",
   "profile.walletStatus": "钱包状态",
+  "profile.account": "账户",
   "profile.language": "语言",
   "profile.saveChanges": "保存更改",
   "profile.saved": "资料已保存！",
@@ -344,6 +358,12 @@ const jp: typeof en = {
   "login.google": "Google でログイン",
   "login.email": "メールでログイン",
   "login.x": "X でログイン",
+  "login.emailPlaceholder": "メールアドレスを入力",
+  "login.sendCode": "認証コードを送信",
+  "login.codeSent": "コード送信先",
+  "login.codePlaceholder": "6桁のコードを入力",
+  "login.verify": "確認してログイン",
+  "login.back": "ログインオプションに戻る",
 
   // ===== ダッシュボード =====
   "dashboard.welcome": "おかえりなさい、{name}",
@@ -458,6 +478,7 @@ const jp: typeof en = {
   "profile.displayName": "表示名",
   "profile.displayNamePlaceholder": "表示名を入力",
   "profile.walletStatus": "ウォレット状態",
+  "profile.account": "アカウント",
   "profile.language": "言語",
   "profile.saveChanges": "変更を保存",
   "profile.saved": "プロフィールを保存しました！",
@@ -495,6 +516,12 @@ const kr: typeof en = {
   "login.google": "Google로 계속하기",
   "login.email": "이메일 로그인",
   "login.x": "X로 계속하기",
+  "login.emailPlaceholder": "이메일 주소를 입력하세요",
+  "login.sendCode": "인증 코드 보내기",
+  "login.codeSent": "코드 발송 대상",
+  "login.codePlaceholder": "6자리 코드 입력",
+  "login.verify": "확인 및 로그인",
+  "login.back": "로그인 옵션으로 돌아가기",
 
   // ===== 대시보드 =====
   "dashboard.welcome": "다시 오신 것을 환영합니다, {name}",
@@ -609,6 +636,7 @@ const kr: typeof en = {
   "profile.displayName": "표시 이름",
   "profile.displayNamePlaceholder": "표시 이름을 입력하세요",
   "profile.walletStatus": "지갑 상태",
+  "profile.account": "계정",
   "profile.language": "언어",
   "profile.saveChanges": "변경 사항 저장",
   "profile.saved": "프로필이 저장되었습니다!",
