@@ -1,20 +1,17 @@
 /**
- * Renaiss Protocol - On-chain NFT Data Fetcher
- * Fetches ERC-721 NFT data from the Renaiss contract on BNB Smart Chain
- * Uses proxy endpoints to avoid CORS issues with Renaiss metadata API
+ * Renaiss Protocol - On-chain NFT Data Fetcher (Optimized)
+ * Uses batch JSON-RPC and parallel fetching for maximum speed
+ * Target: all cards loaded within 2 seconds
  */
 
-// Use proxy in dev, direct in production (server handles proxy)
 const BSC_RPC_URL = "/api/bsc-rpc";
 const METADATA_BASE = "/api/renaiss-metadata";
-
 const RENAISS_CONTRACT = "0xF8646A3Ca093e97Bb404c3b25e675C0394DD5b30";
 
-// Function selectors
 const SELECTORS = {
-  balanceOf: "0x70a08231",           // balanceOf(address)
-  tokenOfOwnerByIndex: "0x2f745c59", // tokenOfOwnerByIndex(address,uint256)
-  tokenURI: "0xc87b56dd",           // tokenURI(uint256)
+  balanceOf: "0x70a08231",
+  tokenOfOwnerByIndex: "0x2f745c59",
+  tokenURI: "0xc87b56dd",
 };
 
 export interface RenaisCardAttribute {
@@ -52,11 +49,13 @@ export interface RenaisCardMetadata {
 }
 
 export interface RenaisCard {
-  tokenId: string;        // decimal string
-  tokenIdHex: string;     // hex string with 0x prefix
+  tokenId: string;
+  tokenIdHex: string;
   metadata: RenaisCardMetadata;
-  renaisUrl: string;      // direct link to renaiss.xyz card page
+  renaisUrl: string;
 }
+
+/* ===== Encoding helpers ===== */
 
 function padAddress(address: string): string {
   return address.toLowerCase().replace("0x", "").padStart(64, "0");
@@ -108,16 +107,11 @@ function addStrings(a: string, b: string): string {
   return result || "0";
 }
 
-function decodeUint256AsNumber(hexResult: string): number {
-  return parseInt(hexResult, 16);
-}
-
 function decodeString(hexResult: string): string {
   const hex = hexResult.replace("0x", "");
   const offset = parseInt(hex.substring(0, 64), 16) * 2;
   const length = parseInt(hex.substring(offset, offset + 64), 16);
   const strData = hex.substring(offset + 64, offset + 64 + length * 2);
-  
   let result = "";
   for (let i = 0; i < strData.length; i += 2) {
     result += String.fromCharCode(parseInt(strData.substring(i, i + 2), 16));
@@ -125,7 +119,43 @@ function decodeString(hexResult: string): string {
   return result;
 }
 
-async function ethCall(to: string, data: string): Promise<string> {
+/* ===== Batch JSON-RPC: send multiple eth_call in ONE HTTP request ===== */
+
+interface BatchCall {
+  to: string;
+  data: string;
+}
+
+async function batchEthCall(calls: BatchCall[]): Promise<string[]> {
+  if (calls.length === 0) return [];
+
+  const body = calls.map((c, i) => ({
+    jsonrpc: "2.0",
+    method: "eth_call",
+    params: [{ to: c.to, data: c.data }, "latest"],
+    id: i + 1,
+  }));
+
+  const response = await fetch(BSC_RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const results = await response.json();
+
+  // Sort by id to maintain order
+  const sorted = Array.isArray(results)
+    ? results.sort((a: any, b: any) => a.id - b.id)
+    : [results];
+
+  return sorted.map((r: any) => {
+    if (r.error) throw new Error(`RPC Error: ${r.error.message || JSON.stringify(r.error)}`);
+    return r.result;
+  });
+}
+
+async function singleEthCall(to: string, data: string): Promise<string> {
   const response = await fetch(BSC_RPC_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -136,133 +166,17 @@ async function ethCall(to: string, data: string): Promise<string> {
       id: 1,
     }),
   });
-
   const json = await response.json();
-  
-  if (json.error) {
-    throw new Error(`RPC Error: ${json.error.message || JSON.stringify(json.error)}`);
-  }
-  
+  if (json.error) throw new Error(`RPC Error: ${json.error.message || JSON.stringify(json.error)}`);
   return json.result;
 }
 
-/**
- * Get the number of Renaiss NFTs owned by an address
- */
-export async function getBalance(walletAddress: string): Promise<number> {
-  const data = SELECTORS.balanceOf + padAddress(walletAddress);
-  const result = await ethCall(RENAISS_CONTRACT, data);
-  return decodeUint256AsNumber(result);
-}
+/* ===== Public API ===== */
 
-/**
- * Get the token ID at a specific index for an owner
- */
-export async function getTokenOfOwnerByIndex(
-  walletAddress: string,
-  index: number
-): Promise<{ hex: string; decimal: string }> {
-  const data =
-    SELECTORS.tokenOfOwnerByIndex +
-    padAddress(walletAddress) +
-    padUint256(index);
-  const result = await ethCall(RENAISS_CONTRACT, data);
-  return {
-    hex: result,
-    decimal: hexToDecimal(result),
-  };
-}
-
-/**
- * Get the metadata URI for a token, rewritten to use local proxy
- */
-export async function getTokenURI(tokenIdHex: string): Promise<string> {
-  const cleanHex = tokenIdHex.replace("0x", "");
-  const data = SELECTORS.tokenURI + cleanHex;
-  const result = await ethCall(RENAISS_CONTRACT, data);
-  const originalUri = decodeString(result);
-  
-  // Rewrite the URI to use our proxy
-  // Original: https://renaiss.xyz/index/token/bsc/CONTRACT/TOKEN_ID/metadata.json
-  // Proxy:    /api/renaiss-metadata/bsc/CONTRACT/TOKEN_ID/metadata.json
-  const proxyUri = originalUri
-    .replace("https://renaiss.xyz/index/token", METADATA_BASE)
-    .replace("https://www.renaiss.xyz/index/token", METADATA_BASE);
-  
-  return proxyUri;
-}
-
-/**
- * Fetch metadata JSON from a URI (using proxied URL)
- */
-export async function fetchMetadata(uri: string): Promise<RenaisCardMetadata> {
-  const response = await fetch(uri);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch metadata: ${response.status}`);
-  }
-  return response.json();
-}
-
-/**
- * Get the Renaiss card detail page URL (always points to real renaiss.xyz)
- */
 export function getRenaisCardUrl(tokenIdDecimal: string): string {
   return `https://renaiss.xyz/card/${tokenIdDecimal}`;
 }
 
-/**
- * Fetch all Renaiss cards for a wallet address
- */
-export async function fetchWalletCards(
-  walletAddress: string,
-  onProgress?: (loaded: number, total: number) => void
-): Promise<RenaisCard[]> {
-  if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-    throw new Error("Invalid wallet address format");
-  }
-
-  // Step 1: Get balance
-  const balance = await getBalance(walletAddress);
-  
-  if (balance === 0) {
-    return [];
-  }
-
-  onProgress?.(0, balance);
-
-  // Step 2: Get all token IDs
-  const tokenIds: { hex: string; decimal: string }[] = [];
-  for (let i = 0; i < balance; i++) {
-    const tokenId = await getTokenOfOwnerByIndex(walletAddress, i);
-    tokenIds.push(tokenId);
-  }
-
-  // Step 3: Fetch metadata for each token
-  const cards: RenaisCard[] = [];
-  for (let i = 0; i < tokenIds.length; i++) {
-    try {
-      const uri = await getTokenURI(tokenIds[i].hex);
-      const metadata = await fetchMetadata(uri);
-      
-      cards.push({
-        tokenId: tokenIds[i].decimal,
-        tokenIdHex: tokenIds[i].hex,
-        metadata,
-        renaisUrl: getRenaisCardUrl(tokenIds[i].decimal),
-      });
-    } catch (error) {
-      console.error(`Failed to fetch card ${i}:`, error);
-    }
-    
-    onProgress?.(i + 1, balance);
-  }
-
-  return cards;
-}
-
-/**
- * Get a specific attribute value from card metadata
- */
 export function getCardAttribute(
   metadata: RenaisCardMetadata,
   traitType: string
@@ -272,9 +186,89 @@ export function getCardAttribute(
   )?.value;
 }
 
-/**
- * Validate if a string is a valid Ethereum/BSC address
- */
 export function isValidAddress(address: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+/**
+ * Fetch all Renaiss cards for a wallet - OPTIMIZED for speed
+ *
+ * Strategy:
+ * 1. Single RPC call: balanceOf
+ * 2. ONE batch RPC call: all tokenOfOwnerByIndex calls at once
+ * 3. ONE batch RPC call: all tokenURI calls at once
+ * 4. Promise.all: fetch all metadata JSON in parallel
+ *
+ * Total: ~3 HTTP requests to RPC + N parallel metadata fetches
+ * Target: < 2 seconds for any reasonable collection size
+ */
+export async function fetchWalletCards(
+  walletAddress: string,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<RenaisCard[]> {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    throw new Error("Invalid wallet address format");
+  }
+
+  // Step 1: Get balance (single call)
+  const balData = SELECTORS.balanceOf + padAddress(walletAddress);
+  const balResult = await singleEthCall(RENAISS_CONTRACT, balData);
+  const balance = parseInt(balResult, 16);
+
+  if (balance === 0) return [];
+
+  onProgress?.(0, balance);
+
+  // Step 2: Batch get ALL token IDs in one request
+  const tokenIdCalls: BatchCall[] = [];
+  for (let i = 0; i < balance; i++) {
+    tokenIdCalls.push({
+      to: RENAISS_CONTRACT,
+      data: SELECTORS.tokenOfOwnerByIndex + padAddress(walletAddress) + padUint256(i),
+    });
+  }
+  const tokenIdResults = await batchEthCall(tokenIdCalls);
+
+  const tokenIds = tokenIdResults.map((hex) => ({
+    hex,
+    decimal: hexToDecimal(hex),
+  }));
+
+  // Step 3: Batch get ALL tokenURIs in one request
+  const uriCalls: BatchCall[] = tokenIds.map((t) => ({
+    to: RENAISS_CONTRACT,
+    data: SELECTORS.tokenURI + t.hex.replace("0x", ""),
+  }));
+  const uriResults = await batchEthCall(uriCalls);
+
+  const uris = uriResults.map((r) => {
+    const originalUri = decodeString(r);
+    return originalUri
+      .replace("https://renaiss.xyz/index/token", METADATA_BASE)
+      .replace("https://www.renaiss.xyz/index/token", METADATA_BASE);
+  });
+
+  // Step 4: Fetch ALL metadata in parallel
+  const cards: RenaisCard[] = [];
+  const metadataPromises = uris.map(async (uri, i) => {
+    try {
+      const response = await fetch(uri);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const metadata: RenaisCardMetadata = await response.json();
+
+      cards.push({
+        tokenId: tokenIds[i].decimal,
+        tokenIdHex: tokenIds[i].hex,
+        metadata,
+        renaisUrl: getRenaisCardUrl(tokenIds[i].decimal),
+      });
+    } catch (error) {
+      console.error(`Failed to fetch card ${i}:`, error);
+    }
+    onProgress?.(cards.length, balance);
+  });
+
+  await Promise.all(metadataPromises);
+
+  return cards;
 }
