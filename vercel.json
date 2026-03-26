@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "dist/public",
+  "installCommand": "pnpm install",
+  "rewrites": [
+    { "source": "/api/renaiss/:path*", "destination": "/api/renaiss" },
+    { "source": "/api/bsc-rpc", "destination": "/api/bsc-rpc" },
+    { "source": "/api/renaiss-metadata/:path*", "destination": "/api/renaiss-metadata" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 30
+    }
+  }
+}
