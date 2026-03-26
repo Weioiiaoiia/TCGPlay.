@@ -747,8 +747,13 @@ function CardDetailModal({
   const cardNumber = getCardAttribute(card.metadata, "Card Number");
 
   // Build PSA verification URL from serial number
-  const psaVerifyUrl = serial
-    ? `https://www.psacard.com/cert/${serial}`
+  // Serial may contain prefix like "PSA" (e.g. "PSA113526651"),
+  // but psacard.com/cert/ requires pure numeric cert number only
+  const psaCertNumber = serial
+    ? serial.replace(/^PSA/i, '').trim()
+    : null;
+  const psaVerifyUrl = psaCertNumber
+    ? `https://www.psacard.com/cert/${psaCertNumber}`
     : null;
 
   return (
