@@ -773,7 +773,7 @@ export default function CardBattle() {
 
       {/* ═══════ Back to Games Lobby Button — Top Left ═══════ */}
       <button
-        onClick={() => { window.location.href = "/games"; }}
+        onClick={() => { window.location.href = "/home"; }}
         className="fixed top-4 left-4 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-105 hover:brightness-110"
         style={{
           background: "linear-gradient(135deg, rgba(212,168,83,0.15), rgba(212,168,83,0.05))",
