@@ -15,6 +15,7 @@ import Album from "./pages/Album";
 import Summary from "./pages/Summary";
 import Profile from "./pages/Profile";
 import CardRace from "./pages/CardRace";
+import CardBattle from "./pages/CardBattle";
 import { AuthProvider } from "./contexts/AuthContext";
 import { PrivyProvider } from "@privy-io/react-auth";
 
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/3d-space" component={ThreeD} />
       <Route path="/games" component={Games} />
       <Route path="/card-race" component={CardRace} />
+      <Route path="/card-battle" component={CardBattle} />
       <Route path="/album" component={Album} />
       <Route path="/summary" component={Summary} />
       <Route path="/profile" component={Profile} />

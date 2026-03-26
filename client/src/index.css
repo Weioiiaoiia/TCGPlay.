@@ -283,6 +283,23 @@
     animation: float 8s ease-in-out infinite;
   }
 
+  /* ========= Glass Panel (Card Battle) ========= */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 1rem;
+  }
+
+  /* ========= Gold Gradient Text ========= */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #d4a853 0%, #f0d78c 40%, #d4a853 60%, #c9a040 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
   /* ========= Smooth Fade In ========= */
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(16px); }

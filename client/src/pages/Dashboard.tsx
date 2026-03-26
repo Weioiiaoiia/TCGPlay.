@@ -34,7 +34,7 @@ export default function Dashboard() {
     {
       title: t("dashboard.cardBattle"),
       desc: t("dashboard.cardBattleDesc"),
-      path: "/games",
+      path: "/card-battle",
       icon: Swords,
       gradient: "from-purple-500/20 to-pink-600/10",
       border: "border-purple-500/20",

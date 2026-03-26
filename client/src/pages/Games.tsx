@@ -21,8 +21,8 @@ export default function Games() {
       gradient: "from-purple-600/30 to-pink-600/30",
       border: "border-purple-500/30",
       iconColor: "text-purple-400",
-      action: () => toast.info(t("games.comingSoonToast")),
-      status: "coming-soon" as const,
+      action: () => setLocation("/card-battle"),
+      status: "live" as const,
     },
     {
       title: t("games.cardRace"),

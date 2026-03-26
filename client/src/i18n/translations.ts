@@ -124,6 +124,9 @@ const en = {
   "games.gashapon": "Gashapon Machine",
   "games.gashaponDesc": "Try your luck with the gashapon machine. Collect rare and exclusive cards.",
 
+  // ===== Card Battle =====
+  "battle.backToLobby": "Back to Lobby",
+
   // ===== Album =====
   "album.title": "Card Album",
   "album.subtitle": "Create beautiful albums from your card collection",
@@ -283,6 +286,9 @@ const cn: typeof en = {
   "games.cardRaceDesc": "使用你的卡牌收藏与他人竞速。速度和策略决定胜负。",
   "games.gashapon": "扭蛋机",
   "games.gashaponDesc": "试试扭蛋机的运气。收集稀有和独家卡牌。",
+
+  // ===== 卡牌对战 =====
+  "battle.backToLobby": "返回游戏大厅",
 
   // ===== 相册 =====
   "album.title": "卡牌相册",
@@ -444,6 +450,9 @@ const jp: typeof en = {
   "games.gashapon": "ガチャマシン",
   "games.gashaponDesc": "ガチャマシンで運試し。レアで限定的なカードを収集。",
 
+  // ===== カードバトル =====
+  "battle.backToLobby": "ゲームロビーに戻る",
+
   // ===== アルバム =====
   "album.title": "カードアルバム",
   "album.subtitle": "カードコレクションから美しいアルバムを作成",
@@ -603,6 +612,9 @@ const kr: typeof en = {
   "games.cardRaceDesc": "카드 컬렉션을 사용하여 다른 플레이어와 레이스하세요. 속도와 전략이 승패를 결정합니다.",
   "games.gashapon": "가챠 머신",
   "games.gashaponDesc": "가챠 머신으로 행운을 시험하세요. 희귀하고 독점적인 카드를 수집하세요.",
+
+  // ===== 카드 배틀 =====
+  "battle.backToLobby": "게임 로비로 돌아가기",
 
   // ===== 앨범 =====
   "album.title": "카드 앨범",
