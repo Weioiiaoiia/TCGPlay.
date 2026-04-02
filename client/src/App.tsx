@@ -12,7 +12,7 @@ import CardVault from "./pages/CardVault";
 import ThreeD from "./pages/ThreeD";
 import Games from "./pages/Games";
 import Album from "./pages/Album";
-import Summary from "./pages/Summary";
+import Summary from "./pages/Summary/index";
 import Profile from "./pages/Profile";
 import CardRace from "./pages/CardRace";
 import CardBattle from "./pages/CardBattle";

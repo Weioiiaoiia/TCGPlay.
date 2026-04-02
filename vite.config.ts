@@ -6,6 +6,9 @@ import { defineConfig } from "vite";
 const plugins = [react(), tailwindcss()];
 
 export default defineConfig({
+  server: {
+    allowedHosts: true,
+  },
   plugins,
   resolve: {
     alias: {
