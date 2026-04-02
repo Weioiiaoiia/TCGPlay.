@@ -2,8 +2,9 @@
  * Card Vault - Connect wallet, fetch on-chain Renaiss NFT cards
  * Displays real card data from BNB Smart Chain
  *
- * v2: Wallet persistence (localStorage), faster loading with cache,
- *     PSA serial number verification button
+ * v3: 5-column grid layout, real-time FMV from Renaiss,
+ *     single-screen modal (no scroll), gold+ice-blue premium palette,
+ *     pagination support for large collections
  */
 import AppNav from "@/components/AppNav";
 import FoggyBg from "@/components/FoggyBg";
@@ -13,23 +14,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   Search,
-  Filter,
   Grid3X3,
   List,
   Wallet,
   ExternalLink,
   Loader2,
   AlertCircle,
-  ChevronDown,
   X,
   Copy,
   Check,
   ShieldCheck,
-  ZoomIn,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchWalletCards,
+  fetchBatchFMV,
   isValidAddress,
   getCardAttribute,
   type RenaisCard,
@@ -37,6 +38,8 @@ import {
 import { useT } from "@/i18n";
 
 type ViewMode = "grid" | "list";
+
+const CARDS_PER_PAGE = 10;
 
 // ── localStorage persistence helpers ──
 const VAULT_STORAGE_PREFIX = "tcgplay-vault-";
@@ -92,11 +95,16 @@ export default function CardVault() {
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
   const [fetchError, setFetchError] = useState("");
 
+  // FMV state
+  const [fmvMap, setFmvMap] = useState<Record<string, number | null>>({});
+  const [fmvLoading, setFmvLoading] = useState(false);
+
   // UI state
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedCard, setSelectedCard] = useState<RenaisCard | null>(null);
   const [copied, setCopied] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Track if we already restored from cache
   const restoredRef = useRef(false);
@@ -116,11 +124,8 @@ export default function CardVault() {
       setCards(saved.cards);
       setWalletConnected(true);
 
-      // Background refresh: silently re-fetch cards to get latest data
-      // but show cached data immediately (instant load)
-      fetchWalletCards(saved.walletAddress, (loaded, total) => {
-        // silent progress, no UI update needed
-      })
+      // Background refresh
+      fetchWalletCards(saved.walletAddress, () => {})
         .then((freshCards) => {
           if (freshCards.length > 0) {
             setCards(freshCards);
@@ -131,11 +136,58 @@ export default function CardVault() {
             });
           }
         })
-        .catch(() => {
-          // Keep cached data on refresh failure
-        });
+        .catch(() => {});
     }
   }, [userId]);
+
+  // ── Fetch FMV for current page cards ──
+  const filteredCards = useMemo(() => {
+    return cards.filter((card) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      const name = card.metadata.name.toLowerCase();
+      const collection = card.metadata.collection_name?.toLowerCase() || "";
+      const serial = getCardAttribute(card.metadata, "Serial")?.toLowerCase() || "";
+      return name.includes(q) || collection.includes(q) || serial.includes(q);
+    });
+  }, [cards, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCards.length / CARDS_PER_PAGE));
+  const paginatedCards = useMemo(() => {
+    const start = (currentPage - 1) * CARDS_PER_PAGE;
+    return filteredCards.slice(start, start + CARDS_PER_PAGE);
+  }, [filteredCards, currentPage]);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  // Fetch FMV for visible cards
+  useEffect(() => {
+    if (paginatedCards.length === 0) return;
+    const tokenIds = paginatedCards.map((c) => c.tokenId);
+    // Only fetch for cards we don't have FMV for yet
+    const missing = tokenIds.filter((id) => !(id in fmvMap));
+    if (missing.length === 0) return;
+
+    setFmvLoading(true);
+    fetchBatchFMV(missing)
+      .then((results) => {
+        setFmvMap((prev) => ({ ...prev, ...results }));
+      })
+      .finally(() => setFmvLoading(false));
+  }, [paginatedCards]);
+
+  // Total FMV calculation
+  const totalFMV = useMemo(() => {
+    let sum = 0;
+    for (const card of cards) {
+      const fmv = fmvMap[card.tokenId];
+      if (fmv != null) sum += fmv;
+    }
+    return sum;
+  }, [cards, fmvMap]);
 
   const handleConnectWallet = useCallback(async () => {
     const trimmed = walletAddress.trim();
@@ -152,6 +204,8 @@ export default function CardVault() {
     setLoading(true);
     setFetchError("");
     setCards([]);
+    setFmvMap({});
+    setCurrentPage(1);
 
     try {
       const result = await fetchWalletCards(trimmed, (loaded, total) => {
@@ -161,7 +215,6 @@ export default function CardVault() {
       setCards(result);
       setWalletConnected(true);
 
-      // Persist to localStorage
       if (userId) {
         saveVaultData(userId, {
           walletAddress: trimmed,
@@ -190,7 +243,8 @@ export default function CardVault() {
     setWalletAddress("");
     setSelectedCard(null);
     setFetchError("");
-    // Clear persisted data
+    setFmvMap({});
+    setCurrentPage(1);
     if (userId) {
       clearVaultData(userId);
     }
@@ -201,20 +255,8 @@ export default function CardVault() {
       await navigator.clipboard.writeText(walletAddress);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback
-    }
+    } catch {}
   };
-
-  // Filter cards by search query
-  const filteredCards = cards.filter((card) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    const name = card.metadata.name.toLowerCase();
-    const collection = card.metadata.collection_name?.toLowerCase() || "";
-    const serial = getCardAttribute(card.metadata, "Serial")?.toLowerCase() || "";
-    return name.includes(q) || collection.includes(q) || serial.includes(q);
-  });
 
   if (!isLoggedIn) return null;
 
@@ -223,18 +265,19 @@ export default function CardVault() {
       <FoggyBg />
       <AppNav />
 
-      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1200px] mx-auto">
+      <main className="relative z-10 pt-24 pb-16 px-4 max-w-[1400px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="flex items-center justify-between mb-6">
+          {/* Page Header */}
+          <div className="flex items-center justify-between mb-5">
             <h1 className="font-display text-3xl font-bold text-white">{t("vault.title")}</h1>
             {walletConnected && (
               <button
                 onClick={handleDisconnect}
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white/50 hover:text-white/80 hover:bg-white/10 transition-all text-sm font-heading"
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] border border-white/[0.06] text-white/45 hover:text-white/80 hover:bg-white/[0.08] transition-all text-sm font-heading"
               >
                 <Wallet className="w-4 h-4" />
                 <span className="hidden sm:inline">
@@ -254,8 +297,8 @@ export default function CardVault() {
                 transition={{ duration: 0.5, delay: 0.2 }}
                 className="glass-card p-10 md:p-12 text-center max-w-md w-full"
               >
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-white/10 flex items-center justify-center mx-auto mb-6">
-                  <Wallet className="w-10 h-10 text-purple-400" />
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#d4a853]/20 to-[#7eb8d4]/20 border border-white/10 flex items-center justify-center mx-auto mb-6">
+                  <Wallet className="w-10 h-10 text-[#d4a853]" />
                 </div>
                 <h2 className="font-heading text-xl font-semibold text-white mb-3">
                   {t("vault.connectWallet")}
@@ -264,13 +307,12 @@ export default function CardVault() {
                   {t("vault.connectDesc")}
                 </p>
 
-                {/* Wallet address input */}
                 <div className="mb-4">
                   <div
                     className={`flex items-center gap-2 bg-white/5 rounded-xl px-4 py-3 border transition-colors ${
                       inputError
                         ? "border-red-500/50"
-                        : "border-white/10 focus-within:border-purple-500/50"
+                        : "border-white/10 focus-within:border-[#d4a853]/40"
                     }`}
                   >
                     <Wallet className="w-4 h-4 text-white/30 flex-shrink-0" />
@@ -300,7 +342,7 @@ export default function CardVault() {
                 <button
                   onClick={handleConnectWallet}
                   disabled={loading}
-                  className="btn-purple-gradient text-sm px-8 py-3 w-full flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="vault-btn-gold text-sm px-8 py-3 w-full flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {loading ? (
                     <>
@@ -324,7 +366,6 @@ export default function CardVault() {
                   </p>
                 )}
 
-                {/* Hint */}
                 <p className="text-white/20 text-[11px] mt-6 font-heading leading-relaxed">
                   {t("vault.erc721Note")}
                   <br />
@@ -336,17 +377,17 @@ export default function CardVault() {
             /* ============ Cards Display ============ */
             <>
               {/* Wallet info bar */}
-              <div className="glass-card p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="glass-card p-3 px-5 mb-5 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/30 to-pink-500/30 border border-white/10 flex items-center justify-center">
-                    <Wallet className="w-4 h-4 text-purple-400" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#d4a853]/25 to-[#7eb8d4]/25 border border-white/10 flex items-center justify-center">
+                    <Wallet className="w-4 h-4 text-[#d4a853]" />
                   </div>
                   <div>
-                    <p className="text-white/40 text-[11px] font-heading uppercase tracking-wider">
+                    <p className="text-white/35 text-[11px] font-heading uppercase tracking-wider">
                       {t("vault.connectedWallet")}
                     </p>
                     <div className="flex items-center gap-2">
-                      <p className="text-white/80 text-sm font-mono">
+                      <p className="text-white/75 text-sm font-mono">
                         {walletAddress.slice(0, 10)}...{walletAddress.slice(-8)}
                       </p>
                       <button
@@ -354,7 +395,7 @@ export default function CardVault() {
                         className="text-white/30 hover:text-white/60 transition-colors"
                       >
                         {copied ? (
-                          <Check className="w-3.5 h-3.5 text-green-400" />
+                          <Check className="w-3.5 h-3.5 text-[#d4a853]" />
                         ) : (
                           <Copy className="w-3.5 h-3.5" />
                         )}
@@ -362,22 +403,22 @@ export default function CardVault() {
                     </div>
                   </div>
                 </div>
-                <div className="text-sm font-heading text-white/60">
+                <div className="text-sm font-heading text-white/55">
                   {t("vault.cardsFound", { count: cards.length })}
                 </div>
               </div>
 
               {/* Search & View Toggle */}
               {cards.length > 0 && (
-                <div className="glass-card p-4 mb-6 flex flex-col md:flex-row items-center gap-4">
-                  <div className="flex-1 flex items-center gap-2 bg-white/5 rounded-xl px-4 py-2.5 border border-white/10 w-full">
-                    <Search className="w-4 h-4 text-white/40" />
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex-1 flex items-center gap-2 bg-white/[0.04] rounded-[0.875rem] px-4 py-2.5 border border-white/[0.06] focus-within:border-[#d4a853]/25 transition-colors">
+                    <Search className="w-4 h-4 text-white/30" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder={t("vault.searchPlaceholder")}
-                      className="bg-transparent text-white text-sm outline-none w-full placeholder:text-white/30 font-heading"
+                      className="bg-transparent text-white text-sm outline-none w-full placeholder:text-white/20 font-heading"
                     />
                     {searchQuery && (
                       <button
@@ -388,23 +429,23 @@ export default function CardVault() {
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => setViewMode("grid")}
-                      className={`p-2.5 rounded-xl border transition-colors ${
+                      className={`p-2.5 rounded-[0.625rem] border transition-colors ${
                         viewMode === "grid"
-                          ? "bg-white/10 border-white/20 text-white"
-                          : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10"
+                          ? "bg-white/[0.08] border-white/[0.12] text-white"
+                          : "bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]"
                       }`}
                     >
                       <Grid3X3 className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setViewMode("list")}
-                      className={`p-2.5 rounded-xl border transition-colors ${
+                      className={`p-2.5 rounded-[0.625rem] border transition-colors ${
                         viewMode === "list"
-                          ? "bg-white/10 border-white/20 text-white"
-                          : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10"
+                          ? "bg-white/[0.08] border-white/[0.12] text-white"
+                          : "bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]"
                       }`}
                     >
                       <List className="w-4 h-4" />
@@ -413,54 +454,67 @@ export default function CardVault() {
                 </div>
               )}
 
-              {/* Stats */}
+              {/* Stats - 5 columns */}
               {cards.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.totalCards")}</p>
-                    <p className="text-white font-heading font-semibold text-lg">{cards.length}</p>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                  <div className="glass-card p-3.5 text-center">
+                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.totalCards")}</p>
+                    <p className="text-white font-heading font-semibold text-base">{cards.length}</p>
                   </div>
-                  <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.collections")}</p>
-                    <p className="text-white font-heading font-semibold text-lg">
+                  <div className="glass-card p-3.5 text-center">
+                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.collections")}</p>
+                    <p className="text-white font-heading font-semibold text-base">
                       {new Set(cards.map((c) => c.metadata.collection_name)).size}
                     </p>
                   </div>
-                  <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.highestGrade")}</p>
-                    <p className="text-white font-heading font-semibold text-lg">
+                  <div className="glass-card p-3.5 text-center">
+                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.highestGrade")}</p>
+                    <p className="text-[#e8c675] font-heading font-semibold text-base">
                       {cards.length > 0
                         ? getCardAttribute(cards[0].metadata, "Grade") || "--"
                         : "--"}
                     </p>
                   </div>
-                  <div className="glass-card p-4 text-center">
-                    <p className="text-white/40 text-xs font-heading mb-1">{t("vault.chain")}</p>
-                    <p className="text-white font-heading font-semibold text-lg">BSC</p>
+                  <div className="glass-card p-3.5 text-center">
+                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.totalFMV")}</p>
+                    <p className="text-[#e8c675] font-heading font-semibold text-base">
+                      {totalFMV > 0 ? `$${totalFMV.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "--"}
+                    </p>
+                  </div>
+                  <div className="glass-card p-3.5 text-center">
+                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.fmvSource")}</p>
+                    <p className="font-heading font-semibold text-sm">
+                      <span className="inline-flex items-center gap-1.5 text-[#e8c675]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#e8c675] animate-pulse" />
+                        Renaiss {t("vault.live")}
+                      </span>
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* Card Grid / List */}
-              {filteredCards.length > 0 ? (
+              {/* Card Grid / List - 5 columns */}
+              {paginatedCards.length > 0 ? (
                 viewMode === "grid" ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filteredCards.map((card, i) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+                    {paginatedCards.map((card, i) => (
                       <CardGridItem
                         key={card.tokenId}
                         card={card}
                         index={i}
+                        fmv={fmvMap[card.tokenId] ?? null}
                         onClick={() => setSelectedCard(card)}
                       />
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filteredCards.map((card, i) => (
+                  <div className="space-y-2.5">
+                    {paginatedCards.map((card, i) => (
                       <CardListItem
                         key={card.tokenId}
                         card={card}
                         index={i}
+                        fmv={fmvMap[card.tokenId] ?? null}
                         onClick={() => setSelectedCard(card)}
                       />
                     ))}
@@ -485,12 +539,60 @@ export default function CardVault() {
                   </p>
                 </div>
               ) : null}
+
+              {/* Pagination */}
+              {filteredCards.length > CARDS_PER_PAGE && (
+                <div className="flex items-center justify-center gap-1.5 mt-6">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white/50 hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 7) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 4) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNum = totalPages - 6 + i;
+                    } else {
+                      pageNum = currentPage - 3 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-heading transition-all ${
+                          currentPage === pageNum
+                            ? "bg-[#d4a853]/15 border border-[#d4a853]/20 text-[#e8c675]"
+                            : "bg-white/[0.04] border border-white/[0.06] text-white/50 hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white/50 hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-white/30 text-xs font-heading ml-2">
+                    {(currentPage - 1) * CARDS_PER_PAGE + 1}-{Math.min(currentPage * CARDS_PER_PAGE, filteredCards.length)} / {filteredCards.length}
+                  </span>
+                </div>
+              )}
             </>
           )}
 
           {/* Disclaimer */}
           <div className="text-center mt-8">
-            <p className="text-white/20 text-xs font-heading leading-relaxed">
+            <p className="text-white/15 text-xs font-heading leading-relaxed">
               {t("vault.disclaimer")}
             </p>
           </div>
@@ -502,6 +604,7 @@ export default function CardVault() {
         {selectedCard && (
           <CardDetailModal
             card={selectedCard}
+            fmv={fmvMap[selectedCard.tokenId] ?? null}
             onClose={() => setSelectedCard(null)}
           />
         )}
@@ -514,14 +617,15 @@ export default function CardVault() {
 function CardGridItem({
   card,
   index,
+  fmv,
   onClick,
 }: {
   card: RenaisCard;
   index: number;
+  fmv: number | null;
   onClick: () => void;
 }) {
   const grade = getCardAttribute(card.metadata, "Grade");
-  const serial = getCardAttribute(card.metadata, "Serial");
   const t = useT();
 
   return (
@@ -535,17 +639,16 @@ function CardGridItem({
         className="glass-card glass-card-hover overflow-hidden cursor-pointer group"
       >
         {/* Card Image */}
-        <div className="relative aspect-[3/4] bg-black/30 overflow-hidden">
+        <div className="relative aspect-[3/4] bg-black/25 overflow-hidden rounded-t-[1rem]">
           <img
             src={card.metadata.image}
             alt={card.metadata.name}
-            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
+            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-[1.04]"
             loading="lazy"
           />
-          {/* Grade badge */}
           {grade && (
-            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10">
-              <span className="text-[11px] font-heading font-semibold text-amber-400">
+            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/55 backdrop-blur-sm border border-white/[0.08]">
+              <span className="text-[9px] font-heading font-semibold text-[#e8c675]">
                 {grade}
               </span>
             </div>
@@ -553,16 +656,19 @@ function CardGridItem({
         </div>
 
         {/* Card Info */}
-        <div className="p-4">
-          <h3 className="text-white/90 font-heading text-sm font-medium leading-snug mb-2 line-clamp-2">
+        <div className="p-2.5">
+          <h3 className="text-white/90 font-heading text-[11px] font-medium leading-snug mb-1.5 line-clamp-2 min-h-[2em]">
             {card.metadata.name}
           </h3>
           <div className="flex items-center justify-between">
-            {serial && (
-              <span className="text-white/30 text-[11px] font-mono">{serial}</span>
-            )}
-            <span className="text-purple-400/60 text-[11px] font-heading flex items-center gap-1 group-hover:text-purple-400 transition-colors">
-              {t("vault.details")} <ExternalLink className="w-3 h-3" />
+            <div className="flex items-center gap-1">
+              <span className="text-white/20 text-[9px] font-heading uppercase tracking-wide">FMV</span>
+              <span className="text-[#e8c675] text-xs font-semibold font-mono">
+                {fmv != null ? `$${fmv.toFixed(2)}` : "--"}
+              </span>
+            </div>
+            <span className="text-white/20 text-[9px] font-heading flex items-center gap-0.5 group-hover:text-[#d4a853] transition-colors">
+              {t("vault.details")} <ExternalLink className="w-2.5 h-2.5" />
             </span>
           </div>
         </div>
@@ -575,10 +681,12 @@ function CardGridItem({
 function CardListItem({
   card,
   index,
+  fmv,
   onClick,
 }: {
   card: RenaisCard;
   index: number;
+  fmv: number | null;
   onClick: () => void;
 }) {
   const grade = getCardAttribute(card.metadata, "Grade");
@@ -594,10 +702,9 @@ function CardListItem({
     >
       <div
         onClick={onClick}
-        className="glass-card glass-card-hover p-4 cursor-pointer group flex items-center gap-4"
+        className="glass-card glass-card-hover p-3.5 cursor-pointer group flex items-center gap-4"
       >
-        {/* Thumbnail */}
-        <div className="w-16 h-20 rounded-lg overflow-hidden bg-black/30 flex-shrink-0">
+        <div className="w-14 h-[4.5rem] rounded-lg overflow-hidden bg-black/25 flex-shrink-0">
           <img
             src={card.metadata.image}
             alt={card.metadata.name}
@@ -605,8 +712,6 @@ function CardListItem({
             loading="lazy"
           />
         </div>
-
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <h3 className="text-white/90 font-heading text-sm font-medium leading-snug mb-1 truncate">
             {card.metadata.name}
@@ -616,125 +721,37 @@ function CardListItem({
             {set && <span className="truncate">{set}</span>}
           </div>
         </div>
-
-        {/* Right side */}
         <div className="flex items-center gap-3 flex-shrink-0">
+          {fmv != null && (
+            <span className="text-[#e8c675] text-sm font-semibold font-mono">
+              ${fmv.toFixed(2)}
+            </span>
+          )}
           {grade && (
-            <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-heading font-semibold">
+            <span className="px-2 py-0.5 rounded-md bg-[#d4a853]/10 border border-[#d4a853]/15 text-[#e8c675] text-[10px] font-heading font-semibold">
               {grade}
             </span>
           )}
           {serial && (
-            <span className="text-white/25 text-[11px] font-mono hidden md:block">
+            <span className="text-white/20 text-[10px] font-mono hidden md:block">
               {serial}
             </span>
           )}
-          <ExternalLink className="w-4 h-4 text-white/20 group-hover:text-purple-400 transition-colors" />
+          <ExternalLink className="w-4 h-4 text-white/20 group-hover:text-[#d4a853] transition-colors" />
         </div>
       </div>
     </motion.div>
   );
 }
 
-/* ============ Image Magnifier Component ============ */
-function ImageMagnifier({
-  src,
-  alt,
-  zoomLevel = 2.5,
-}: {
-  src: string;
-  alt: string;
-  zoomLevel?: number;
-}) {
-  const [showMagnifier, setShowMagnifier] = useState(false);
-  const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
-  const [imgNaturalSize, setImgNaturalSize] = useState({ w: 0, h: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-
-  const MAGNIFIER_SIZE = 140; // diameter in px
-
-  const handleMouseEnter = () => {
-    setShowMagnifier(true);
-  };
-
-  const handleMouseLeave = () => {
-    setShowMagnifier(false);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    // Cursor position relative to the container
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setMagnifierPos({ x, y });
-  };
-
-  const handleImageLoad = () => {
-    if (imgRef.current) {
-      setImgNaturalSize({
-        w: imgRef.current.naturalWidth,
-        h: imgRef.current.naturalHeight,
-      });
-    }
-  };
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative cursor-crosshair"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onMouseMove={handleMouseMove}
-    >
-      <img
-        ref={imgRef}
-        src={src}
-        alt={alt}
-        className="max-w-full max-h-[400px] object-contain rounded-lg"
-        onLoad={handleImageLoad}
-      />
-
-      {/* Magnifier hint icon */}
-      {!showMagnifier && (
-        <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-1 pointer-events-none">
-          <ZoomIn className="w-3.5 h-3.5 text-white/60" />
-          <span className="text-white/60 text-[10px] font-heading">Hover to zoom</span>
-        </div>
-      )}
-
-      {/* Magnifier lens */}
-      {showMagnifier && imgRef.current && (
-        <div
-          className="absolute pointer-events-none border-2 border-white/40 rounded-full shadow-lg shadow-black/50"
-          style={{
-            width: `${MAGNIFIER_SIZE}px`,
-            height: `${MAGNIFIER_SIZE}px`,
-            left: `${magnifierPos.x - MAGNIFIER_SIZE / 2}px`,
-            top: `${magnifierPos.y - MAGNIFIER_SIZE / 2}px`,
-            backgroundImage: `url('${src}')`,
-            backgroundRepeat: "no-repeat",
-            backgroundSize: `${imgRef.current.clientWidth * zoomLevel}px ${imgRef.current.clientHeight * zoomLevel}px`,
-            backgroundPositionX: `${-magnifierPos.x * zoomLevel + MAGNIFIER_SIZE / 2}px`,
-            backgroundPositionY: `${-magnifierPos.y * zoomLevel + MAGNIFIER_SIZE / 2}px`,
-            zIndex: 20,
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ============ Card Detail Modal ============ */
+/* ============ Card Detail Modal - NO SCROLL, ONE SCREEN ============ */
 function CardDetailModal({
   card,
+  fmv,
   onClose,
 }: {
   card: RenaisCard;
+  fmv: number | null;
   onClose: () => void;
 }) {
   const t = useT();
@@ -746,12 +763,7 @@ function CardDetailModal({
   const language = getCardAttribute(card.metadata, "Language");
   const cardNumber = getCardAttribute(card.metadata, "Card Number");
 
-  // Build PSA verification URL from serial number
-  // Serial may contain prefix like "PSA" (e.g. "PSA113526651"),
-  // but psacard.com/cert/ requires pure numeric cert number only
-  const psaCertNumber = serial
-    ? serial.replace(/^PSA/i, '').trim()
-    : null;
+  const psaCertNumber = serial ? serial.replace(/^PSA/i, "").trim() : null;
   const psaVerifyUrl = psaCertNumber
     ? `https://www.psacard.com/cert/${psaCertNumber}`
     : null;
@@ -765,182 +777,178 @@ function CardDetailModal({
       onClick={onClose}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-[10px]" />
 
-      {/* Modal */}
+      {/* Modal - NO SCROLL */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ duration: 0.3 }}
-        className="relative glass-card p-0 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        className="relative w-[960px] max-w-[95vw] max-h-[92vh] overflow-hidden bg-[rgba(14,13,22,0.97)] backdrop-blur-[40px] border border-white/[0.06] rounded-[1.25rem] flex"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/20 transition-all"
+          className="absolute top-3.5 right-3.5 z-10 w-8 h-8 rounded-full bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-white/50 hover:text-white hover:bg-white/[0.15] transition-all"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="flex flex-col md:flex-row">
-          {/* Card Image with Magnifier */}
-          <div className="md:w-[280px] flex-shrink-0 bg-black/30 p-6 flex items-center justify-center">
-            <ImageMagnifier
-              src={card.metadata.image}
-              alt={card.metadata.name}
-              zoomLevel={2.5}
-            />
-          </div>
+        {/* Image Section - LEFT, LARGE */}
+        <div className="w-[380px] flex-shrink-0 bg-black/25 flex items-center justify-center rounded-l-[1.25rem] p-6">
+          <img
+            src={card.metadata.image}
+            alt={card.metadata.name}
+            className="max-w-full max-h-[72vh] object-contain rounded-lg"
+          />
+        </div>
 
-          {/* Card Details */}
-          <div className="flex-1 p-6 md:p-8">
-            {/* Collection name */}
+        {/* Details Section - RIGHT, COMPACT, NO SCROLL */}
+        <div className="flex-1 p-6 flex flex-col justify-between gap-0 min-h-0">
+          {/* TOP: Title + FMV */}
+          <div className="flex flex-col gap-3">
             {card.metadata.collection_name && (
-              <p className="text-purple-400/70 text-[11px] font-heading uppercase tracking-wider mb-2">
+              <p className="text-[#9ccde5] text-[10px] font-heading uppercase tracking-wider opacity-80">
                 {card.metadata.collection_name}
               </p>
             )}
-
-            <h2 className="text-white font-heading text-lg font-semibold leading-snug mb-4">
+            <h2 className="text-white font-heading text-[1.0625rem] font-semibold leading-snug">
               {card.metadata.name}
             </h2>
 
-            {/* Attributes grid */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
+            {/* FMV Price Box */}
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#d4a853]/[0.06] border border-[#d4a853]/[0.12]">
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-white/35 text-[10px] font-heading uppercase tracking-wide">FMV</span>
+                <span className="text-[#e8c675] text-[1.375rem] font-bold font-mono">
+                  {fmv != null ? `$${fmv.toFixed(2)}` : "--"}
+                </span>
+              </div>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="inline-flex items-center gap-1 text-[#e8c675] text-[10px] font-semibold">
+                  <span className="w-[5px] h-[5px] rounded-full bg-[#e8c675] animate-pulse" />
+                  LIVE
+                </span>
+                <span className="text-white/20 text-[9px]">Renaiss {t("vault.onChainData")}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* MID: Attributes + Chain */}
+          <div className="flex flex-col gap-2.5 flex-1 justify-center">
+            {/* Attributes 3-column grid */}
+            <div className="grid grid-cols-3 gap-2">
               {grader && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.grader")}
-                  </p>
-                  <p className="text-white/80 text-sm font-heading font-medium">{grader}</p>
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.grader")}</p>
+                  <p className="text-white/60 text-xs font-heading font-medium">{grader}</p>
                 </div>
               )}
               {grade && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.grade")}
-                  </p>
-                  <p className="text-amber-400 text-sm font-heading font-medium">{grade}</p>
-                </div>
-              )}
-              {serial && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.serial")}
-                  </p>
-                  <p className="text-white/80 text-sm font-mono">{serial}</p>
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.grade")}</p>
+                  <p className="text-[#e8c675] text-xs font-heading font-medium">{grade}</p>
                 </div>
               )}
               {year && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.year")}
-                  </p>
-                  <p className="text-white/80 text-sm font-heading font-medium">{year}</p>
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.year")}</p>
+                  <p className="text-white/60 text-xs font-heading font-medium">{year}</p>
                 </div>
               )}
-              {set && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5 col-span-2">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.set")}
-                  </p>
-                  <p className="text-white/80 text-sm font-heading font-medium">{set}</p>
+              {serial && (
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.serial")}</p>
+                  <p className="text-white/60 text-[11px] font-mono">{serial}</p>
                 </div>
               )}
               {language && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.language")}
-                  </p>
-                  <p className="text-white/80 text-sm font-heading font-medium">{language}</p>
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.language")}</p>
+                  <p className="text-white/60 text-xs font-heading font-medium">{language}</p>
                 </div>
               )}
               {cardNumber && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-0.5">
-                    {t("vault.cardNumber")}
-                  </p>
-                  <p className="text-white/80 text-sm font-heading font-medium">#{cardNumber}</p>
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.cardNumber")}</p>
+                  <p className="text-white/60 text-xs font-heading font-medium">#{cardNumber}</p>
+                </div>
+              )}
+              {set && (
+                <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2 col-span-3">
+                  <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide">{t("vault.set")}</p>
+                  <p className="text-white/60 text-xs font-heading font-medium">{set}</p>
                 </div>
               )}
             </div>
 
-            {/* Token info */}
-            <div className="bg-white/[0.03] rounded-xl p-4 border border-white/5 mb-6">
-              <p className="text-white/30 text-[10px] font-heading uppercase tracking-wider mb-2">
-                {t("vault.onChainInfo")}
-              </p>
-              <div className="space-y-1.5">
+            {/* Chain Info - compact */}
+            <div className="bg-white/[0.02] border border-white/[0.03] rounded-lg px-3 py-2.5">
+              <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide mb-1.5">{t("vault.onChainInfo")}</p>
+              <div className="space-y-0.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-white/30 text-xs font-heading">{t("vault.chain")}</span>
-                  <span className="text-white/60 text-xs font-heading">
+                  <span className="text-white/20 text-[11px] font-heading">{t("vault.chain")}</span>
+                  <span className="text-white/55 text-[11px] font-mono">
                     {card.metadata.token_info?.chain || "BSC Mainnet"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-white/30 text-xs font-heading">{t("vault.contract")}</span>
-                  <span className="text-white/60 text-xs font-mono">
+                  <span className="text-white/20 text-[11px] font-heading">{t("vault.contract")}</span>
+                  <span className="text-white/55 text-[11px] font-mono">
                     {card.metadata.token_info?.contract_address
                       ? `${card.metadata.token_info.contract_address.slice(0, 6)}...${card.metadata.token_info.contract_address.slice(-4)}`
                       : "0xF864...5b30"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-white/30 text-xs font-heading">{t("vault.tokenId")}</span>
-                  <span className="text-white/60 text-xs font-mono">
+                  <span className="text-white/20 text-[11px] font-heading">{t("vault.tokenId")}</span>
+                  <span className="text-white/55 text-[11px] font-mono">
                     {card.tokenId.length > 16
                       ? `${card.tokenId.slice(0, 8)}...${card.tokenId.slice(-8)}`
                       : card.tokenId}
                   </span>
                 </div>
-                {card.metadata.item_info?.original_owner?.username && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/30 text-xs font-heading">{t("vault.originalOwner")}</span>
-                    <span className="text-white/60 text-xs font-heading">
-                      {card.metadata.item_info.original_owner.username}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
+          </div>
 
-            {/* Action buttons */}
-            <div className="space-y-3">
-              {/* PSA Verification Button */}
+          {/* BOTTOM: Action Buttons */}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2.5">
               {psaVerifyUrl && (
                 <a
                   href={psaVerifyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block w-full text-center py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-110 no-underline"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-[0.625rem] text-xs font-semibold text-white no-underline transition-all hover:brightness-110 hover:-translate-y-px"
                   style={{
-                    background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
-                    color: "#ffffff",
-                    boxShadow: "0 4px 16px rgba(34,197,94,0.3)",
+                    background: "linear-gradient(135deg, #c9953c 0%, #d4a853 50%, #c9953c 100%)",
+                    backgroundSize: "200% 200%",
+                    boxShadow: "0 2px 12px rgba(212,168,83,0.2)",
                   }}
                 >
-                  <span className="flex items-center justify-center gap-2">
-                    <ShieldCheck className="w-4 h-4" />
-                    {t("vault.psaVerify")}
-                  </span>
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {t("vault.psaVerify")}
                 </a>
               )}
-
-              {/* View on Renaiss Button */}
               <a
                 href={card.renaisUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-purple-gradient text-sm px-6 py-3 w-full flex items-center justify-center gap-2 no-underline"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-[0.625rem] text-xs font-semibold text-white no-underline transition-all hover:brightness-110 hover:-translate-y-px"
+                style={{
+                  background: "linear-gradient(135deg, #5a8fa8 0%, #7eb8d4 50%, #5a8fa8 100%)",
+                  backgroundSize: "200% 200%",
+                  boxShadow: "0 2px 12px rgba(126,184,212,0.15)",
+                }}
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="w-3.5 h-3.5" />
                 {t("vault.viewOnRenaiss")}
               </a>
             </div>
-
-            <p className="text-white/15 text-[10px] mt-3 text-center font-heading">
+            <p className="text-white/[0.1] text-[9px] text-center font-heading">
               {t("vault.opensRenaiss")}
             </p>
           </div>

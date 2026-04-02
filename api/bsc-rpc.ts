@@ -27,7 +27,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body),
       });
-      const data = await response.json();
+      if (!response.ok) {
+        continue;
+      }
+      const text = await response.text();
+      if (!text || text.trim() === "") {
+        continue;
+      }
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        continue;
+      }
       return res.status(200).json(data);
     } catch {
       if (attempt === BSC_RPC_URLS.length - 1) {

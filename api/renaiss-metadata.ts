@@ -15,8 +15,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    const data = await response.json();
-    return res.status(response.status).json(data);
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Upstream returned ${response.status}` });
+    }
+    const text = await response.text();
+    if (!text || text.trim() === "") {
+      return res.status(502).json({ error: "Empty response from upstream" });
+    }
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return res.status(502).json({ error: "Invalid JSON from upstream" });
+    }
+    return res.status(200).json(data);
   } catch (e) {
     return res.status(502).json({ error: e instanceof Error ? e.message : "Proxy error" });
   }

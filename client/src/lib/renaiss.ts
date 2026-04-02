@@ -151,9 +151,23 @@ async function batchEthCall(calls: BatchCall[]): Promise<string[]> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }, 3500);
+  }, 8000);
 
-  const results = await response.json();
+  if (!response.ok) {
+    throw new Error(`RPC HTTP Error: ${response.status} ${response.statusText}`);
+  }
+
+  const text = await response.text();
+  if (!text || text.trim() === "") {
+    throw new Error("RPC returned empty response");
+  }
+
+  let results: any;
+  try {
+    results = JSON.parse(text);
+  } catch {
+    throw new Error("RPC returned invalid JSON");
+  }
 
   // Sort by id to maintain order
   const sorted = Array.isArray(results)
@@ -176,8 +190,24 @@ async function singleEthCall(to: string, data: string): Promise<string> {
       params: [{ to, data }, "latest"],
       id: 1,
     }),
-  }, 3000);
-  const json = await response.json();
+  }, 8000);
+
+  if (!response.ok) {
+    throw new Error(`RPC HTTP Error: ${response.status} ${response.statusText}`);
+  }
+
+  const text = await response.text();
+  if (!text || text.trim() === "") {
+    throw new Error("RPC returned empty response");
+  }
+
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error("RPC returned invalid JSON");
+  }
+
   if (json.error) throw new Error(`RPC Error: ${json.error.message || JSON.stringify(json.error)}`);
   return json.result;
 }
@@ -199,6 +229,64 @@ export function getCardAttribute(
 
 export function isValidAddress(address: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+/**
+ * Fetch FMV (Fair Market Value) for a single card from Renaiss
+ * Returns price in USD or null if not available
+ */
+export async function fetchCardFMV(tokenId: string): Promise<number | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `/api/renaiss/fmv/${tokenId}`,
+      {},
+      15000
+    );
+    if (!response.ok) return null;
+    const text = await response.text();
+    if (!text || text.trim() === "") return null;
+    try {
+      const data = JSON.parse(text);
+      return data.fmv ?? null;
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Batch fetch FMV for multiple cards
+ * Returns a map of tokenId -> FMV price in USD
+ */
+export async function fetchBatchFMV(
+  tokenIds: string[]
+): Promise<Record<string, number | null>> {
+  if (tokenIds.length === 0) return {};
+
+  try {
+    const response = await fetchWithTimeout(
+      `/api/renaiss/batch-fmv`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenIds }),
+      },
+      30000
+    );
+    if (!response.ok) return {};
+    const text = await response.text();
+    if (!text || text.trim() === "") return {};
+    try {
+      const data = JSON.parse(text);
+      return data.results ?? {};
+    } catch {
+      return {};
+    }
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -266,9 +354,16 @@ export async function fetchWalletCards(
 
   const metadataPromises = uris.map(async (uri, i) => {
     try {
-      const response = await fetchWithTimeout(uri, {}, 3500);
+      const response = await fetchWithTimeout(uri, {}, 8000);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const metadata: RenaisCardMetadata = await response.json();
+      const text = await response.text();
+      if (!text || text.trim() === "") throw new Error("Empty metadata response");
+      let metadata: RenaisCardMetadata;
+      try {
+        metadata = JSON.parse(text);
+      } catch {
+        throw new Error("Invalid metadata JSON");
+      }
 
       cards.push({
         tokenId: tokenIds[i].decimal,

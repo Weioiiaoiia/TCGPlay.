@@ -411,6 +411,76 @@ router.post("/batch-pick", express.json(), async (req, res) => {
   }
 });
 
+// ── FMV Cache ──
+const fmvCache = new Map<string, { fmv: number | null; ts: number }>();
+const FMV_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchFMVFromRenaiss(tokenIdDecimal: string): Promise<number | null> {
+  // Check cache first
+  const cached = fmvCache.get(tokenIdDecimal);
+  if (cached && Date.now() - cached.ts < FMV_CACHE_TTL) {
+    return cached.fmv;
+  }
+
+  try {
+    const url = `https://www.renaiss.xyz/card/${tokenIdDecimal}`;
+    const res = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    const text = res.data as string;
+    // fmvPriceInUSD is in escaped JSON within the page HTML
+    const match = text.match(/fmvPriceInUSD.{1,10}?(\d{3,})/);
+    if (match) {
+      const fmvCents = parseInt(match[1], 10);
+      const fmvDollars = fmvCents / 100;
+      fmvCache.set(tokenIdDecimal, { fmv: fmvDollars, ts: Date.now() });
+      return fmvDollars;
+    }
+    fmvCache.set(tokenIdDecimal, { fmv: null, ts: Date.now() });
+    return null;
+  } catch (e) {
+    console.error(`[Renaiss] FMV fetch error for ${tokenIdDecimal}:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+// ── API: Get FMV for a single card ──
+router.get("/fmv/:tokenId", async (req, res) => {
+  try {
+    const { tokenId } = req.params;
+    const fmv = await fetchFMVFromRenaiss(tokenId);
+    res.json({ tokenId, fmv });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Unknown error" });
+  }
+});
+
+// ── API: Batch FMV for multiple cards ──
+router.post("/batch-fmv", express.json(), async (req, res) => {
+  try {
+    const tokenIds: string[] = req.body?.tokenIds || [];
+    if (!tokenIds.length) { res.json({ results: {} }); return; }
+
+    // Limit to 20 at a time to avoid overloading
+    const limited = tokenIds.slice(0, 20);
+    const results: Record<string, number | null> = {};
+
+    // Fetch with concurrency limit of 3
+    await pMap(limited, async (tokenId) => {
+      const fmv = await fetchFMVFromRenaiss(tokenId);
+      results[tokenId] = fmv;
+    }, 3);
+
+    res.json({ results });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Unknown error" });
+  }
+});
+
 // ── API: Pool status (for debugging) ──
 router.get("/pool-status", (_req, res) => {
   res.json({
@@ -419,6 +489,7 @@ router.get("/pool-status", (_req, res) => {
     warming: poolWarming,
     cacheSize: metadataCache.size,
     usedCount: usedTokenIds.size,
+    fmvCacheSize: fmvCache.size,
   });
 });
 

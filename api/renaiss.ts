@@ -192,6 +192,30 @@ async function pMap<T, R>(
   return results;
 }
 
+// ── FMV fetcher ──
+async function fetchFMVFromRenaiss(tokenIdDecimal: string): Promise<number | null> {
+  try {
+    const url = `https://www.renaiss.xyz/card/${tokenIdDecimal}`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    const text = await res.text();
+    // fmvPriceInUSD is in escaped JSON within the page HTML (value in cents)
+    const match = text.match(/fmvPriceInUSD.{1,10}?(\d{3,})/);
+    if (match) {
+      const fmvCents = parseInt(match[1], 10);
+      return fmvCents / 100;
+    }
+    return null;
+  } catch (e) {
+    console.error(`[Renaiss] FMV fetch error for ${tokenIdDecimal}:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 // ── Route handler ──
 export default async function handler(
   req: VercelRequest,
@@ -401,6 +425,33 @@ export default async function handler(
 
       const data = await pMap(wallets, pickOne, 3);
       return res.status(200).json({ results: data });
+    }
+
+    // GET /api/renaiss/fmv/:tokenId
+    const fmvMatch = subPath.match(/^\/fmv\/(.+)$/);
+    if (fmvMatch && req.method === "GET") {
+      const tokenId = fmvMatch[1];
+      const fmv = await fetchFMVFromRenaiss(tokenId);
+      return res.status(200).json({ tokenId, fmv });
+    }
+
+    // POST /api/renaiss/batch-fmv
+    if (subPath === "/batch-fmv" && req.method === "POST") {
+      const tokenIds: string[] = req.body?.tokenIds || [];
+      if (!tokenIds.length) {
+        return res.status(200).json({ results: {} });
+      }
+      const limited = tokenIds.slice(0, 20);
+      const results: Record<string, number | null> = {};
+      await pMap(
+        limited,
+        async (tokenId) => {
+          const fmv = await fetchFMVFromRenaiss(tokenId);
+          results[tokenId] = fmv;
+        },
+        3
+      );
+      return res.status(200).json({ results });
     }
 
     // GET /api/renaiss/pool-status

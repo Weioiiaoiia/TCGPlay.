@@ -106,6 +106,10 @@ const en = {
   "vault.originalOwner": "Original Owner",
   "vault.psaVerify": "PSA Cert Verification",
   "vault.psaVerifyDesc": "Verify this card's serial number on PSA official website",
+  "vault.totalFMV": "Total FMV",
+  "vault.fmvSource": "FMV Source",
+  "vault.live": "Live",
+  "vault.onChainData": "On-Chain Data",
 
   // ===== 3D Space =====
   "threeD.title": "3D Space",
@@ -269,6 +273,10 @@ const cn: typeof en = {
   "vault.originalOwner": "原始持有者",
   "vault.psaVerify": "PSA 序列号验证",
   "vault.psaVerifyDesc": "在 PSA 官网验证此卡牌的序列号",
+  "vault.totalFMV": "总 FMV 估值",
+  "vault.fmvSource": "FMV 数据源",
+  "vault.live": "实时",
+  "vault.onChainData": "链上实时数据",
 
   // ===== 3D空间 =====
   "threeD.title": "3D 空间",
@@ -432,6 +440,10 @@ const jp: typeof en = {
   "vault.originalOwner": "オリジナルオーナー",
   "vault.psaVerify": "PSA シリアル認証",
   "vault.psaVerifyDesc": "PSA 公式サイトでこのカードのシリアル番号を検証",
+  "vault.totalFMV": "FMV 合計",
+  "vault.fmvSource": "FMV データソース",
+  "vault.live": "ライブ",
+  "vault.onChainData": "オンチェーンリアルタイムデータ",
 
   // ===== 3D空間 =====
   "threeD.title": "3D 空間",
@@ -595,6 +607,10 @@ const kr: typeof en = {
   "vault.originalOwner": "원래 소유자",
   "vault.psaVerify": "PSA 시리얼 인증",
   "vault.psaVerifyDesc": "PSA 공식 웹사이트에서 이 카드의 시리얼 번호를 검증",
+  "vault.totalFMV": "FMV 합계",
+  "vault.fmvSource": "FMV 데이터 소스",
+  "vault.live": "라이브",
+  "vault.onChainData": "온체인 실시간 데이터",
 
   // ===== 3D 공간 =====
   "threeD.title": "3D 공간",
