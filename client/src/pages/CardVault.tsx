@@ -2,9 +2,11 @@
  * Card Vault - Connect wallet, fetch on-chain Renaiss NFT cards
  * Displays real card data from BNB Smart Chain
  *
- * v3: 5-column grid layout, real-time FMV from Renaiss,
- *     single-screen modal (no scroll), gold+ice-blue premium palette,
- *     pagination support for large collections
+ * v5: Dual-path loading (tRPC cache + tokenURI fallback)
+ *     ALL cards shown (even those not in tRPC index)
+ *     Skeleton placeholders for pending cards, auto-polled
+ *     Total FMV from server, shown immediately after load
+ *     5-column grid layout
  */
 import AppNav from "@/components/AppNav";
 import FoggyBg from "@/components/FoggyBg";
@@ -26,11 +28,10 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  fetchWalletCards,
-  fetchBatchFMV,
   isValidAddress,
   getCardAttribute,
   type RenaisCard,
@@ -39,7 +40,7 @@ import { useT } from "@/i18n";
 
 type ViewMode = "grid" | "list";
 
-const CARDS_PER_PAGE = 10;
+const CARDS_PER_PAGE = 20;
 
 // ── localStorage persistence helpers ──
 const VAULT_STORAGE_PREFIX = "tcgplay-vault-";
@@ -51,31 +52,93 @@ function getVaultStorageKey(userId: string): string {
 interface VaultPersistData {
   walletAddress: string;
   cards: RenaisCard[];
+  totalFMV: number;
   timestamp: number;
 }
 
 function loadVaultData(userId: string): VaultPersistData | null {
   try {
     const raw = localStorage.getItem(getVaultStorageKey(userId));
-    if (raw) {
-      return JSON.parse(raw) as VaultPersistData;
-    }
-  } catch {
-    // ignore parse errors
-  }
+    if (raw) return JSON.parse(raw) as VaultPersistData;
+  } catch {}
   return null;
 }
 
 function saveVaultData(userId: string, data: VaultPersistData): void {
   try {
     localStorage.setItem(getVaultStorageKey(userId), JSON.stringify(data));
-  } catch {
-    // localStorage might be full, silently fail
-  }
+  } catch {}
 }
 
 function clearVaultData(userId: string): void {
   localStorage.removeItem(getVaultStorageKey(userId));
+}
+
+// ── Map server card response to RenaisCard ──
+function mapServerCard(c: any): RenaisCard {
+  return {
+    tokenId: c.tokenId,
+    tokenIdHex: c.tokenIdHex,
+    fmv: c.fmv ?? null,
+    loading: c.loading ?? false,
+    renaisUrl: `https://renaiss.xyz/card/${c.tokenId}`,
+    metadata: c.metadata || {
+      name: c.name || "",
+      description: "",
+      collection_name: c.collection_name || "",
+      external_url: "",
+      image: c.image || "",
+      animation_url: c.animation_url || null,
+      video: c.video || null,
+      token_info: {
+        token_id: c.tokenId,
+        contract_address: "0xF8646A3Ca093e97Bb404c3b25e675C0394DD5b30",
+        chain: "BSC Mainnet",
+        proof_of_integrity: { fingerprint: "", salt: "", hex_proof: "" },
+      },
+      item_info: { original_owner: { username: "", address: "" }, asset_pictures: [] },
+      attributes: c.attributes || [],
+      product_type: "",
+    },
+  };
+}
+
+// ── Fetch wallet cards from server ──
+async function fetchWalletCardsFromServer(wallet: string): Promise<{
+  cards: RenaisCard[];
+  totalFMV: number;
+  balance: number;
+  pendingTokenIds: string[];
+}> {
+  const response = await fetch(`/api/renaiss/wallet-cards/${wallet}`, {
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  const cards: RenaisCard[] = (data.cards || []).map(mapServerCard);
+  return {
+    cards,
+    totalFMV: data.totalFMV || 0,
+    balance: data.balance || 0,
+    pendingTokenIds: data.pendingTokenIds || [],
+  };
+}
+
+// ── Poll server for pending (loading) cards ──
+async function fetchPendingCards(tokenIds: string[]): Promise<RenaisCard[]> {
+  if (!tokenIds.length) return [];
+  const response = await fetch(`/api/renaiss/wallet-cards-pending`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tokenIds }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return (data.cards || []).map(mapServerCard);
 }
 
 export default function CardVault() {
@@ -91,13 +154,10 @@ export default function CardVault() {
 
   // Cards state
   const [cards, setCards] = useState<RenaisCard[]>([]);
+  const [totalFMV, setTotalFMV] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
   const [fetchError, setFetchError] = useState("");
-
-  // FMV state
-  const [fmvMap, setFmvMap] = useState<Record<string, number | null>>({});
-  const [fmvLoading, setFmvLoading] = useState(false);
+  const [pendingTokenIds, setPendingTokenIds] = useState<string[]>([]);
 
   // UI state
   const [searchQuery, setSearchQuery] = useState("");
@@ -108,10 +168,41 @@ export default function CardVault() {
 
   // Track if we already restored from cache
   const restoredRef = useRef(false);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isLoggedIn) setLocation("/login");
   }, [isLoggedIn, setLocation]);
+
+  // ── Poll for pending cards ──
+  useEffect(() => {
+    if (!pendingTokenIds.length) return;
+
+    const poll = async () => {
+      try {
+        const fetched = await fetchPendingCards(pendingTokenIds);
+        if (fetched.length > 0) {
+          setCards((prev) => {
+            const updated = [...prev];
+            const fetchedMap = new Map(fetched.map((c) => [c.tokenId, c]));
+            for (let i = 0; i < updated.length; i++) {
+              const replacement = fetchedMap.get(updated[i].tokenId);
+              if (replacement) updated[i] = replacement;
+            }
+            return updated;
+          });
+          // Remove resolved tokenIds from pending
+          const resolvedIds = new Set(fetched.map((c) => c.tokenId));
+          setPendingTokenIds((prev) => prev.filter((id) => !resolvedIds.has(id)));
+        }
+      } catch {}
+    };
+
+    pollTimerRef.current = setTimeout(poll, 3000);
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, [pendingTokenIds]);
 
   // ── Restore wallet connection from localStorage on mount ──
   useEffect(() => {
@@ -122,16 +213,20 @@ export default function CardVault() {
     if (saved && saved.walletAddress && saved.cards.length > 0) {
       setWalletAddress(saved.walletAddress);
       setCards(saved.cards);
+      setTotalFMV(saved.totalFMV || 0);
       setWalletConnected(true);
 
       // Background refresh
-      fetchWalletCards(saved.walletAddress, () => {})
-        .then((freshCards) => {
+      fetchWalletCardsFromServer(saved.walletAddress)
+        .then(({ cards: freshCards, totalFMV: freshFMV, pendingTokenIds: pending }) => {
           if (freshCards.length > 0) {
             setCards(freshCards);
+            setTotalFMV(freshFMV);
+            if (pending.length > 0) setPendingTokenIds(pending);
             saveVaultData(userId, {
               walletAddress: saved.walletAddress,
-              cards: freshCards,
+              cards: freshCards.filter((c) => !c.loading),
+              totalFMV: freshFMV,
               timestamp: Date.now(),
             });
           }
@@ -140,14 +235,14 @@ export default function CardVault() {
     }
   }, [userId]);
 
-  // ── Fetch FMV for current page cards ──
+  // ── Filtered and paginated cards ──
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
-      const name = card.metadata.name.toLowerCase();
-      const collection = card.metadata.collection_name?.toLowerCase() || "";
-      const serial = getCardAttribute(card.metadata, "Serial")?.toLowerCase() || "";
+      const name = (card.metadata.name || "").toLowerCase();
+      const collection = (card.metadata.collection_name || "").toLowerCase();
+      const serial = (getCardAttribute(card.metadata, "Serial") || "").toLowerCase();
       return name.includes(q) || collection.includes(q) || serial.includes(q);
     });
   }, [cards, searchQuery]);
@@ -158,36 +253,9 @@ export default function CardVault() {
     return filteredCards.slice(start, start + CARDS_PER_PAGE);
   }, [filteredCards, currentPage]);
 
-  // Reset page when search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
-
-  // Fetch FMV for visible cards
-  useEffect(() => {
-    if (paginatedCards.length === 0) return;
-    const tokenIds = paginatedCards.map((c) => c.tokenId);
-    // Only fetch for cards we don't have FMV for yet
-    const missing = tokenIds.filter((id) => !(id in fmvMap));
-    if (missing.length === 0) return;
-
-    setFmvLoading(true);
-    fetchBatchFMV(missing)
-      .then((results) => {
-        setFmvMap((prev) => ({ ...prev, ...results }));
-      })
-      .finally(() => setFmvLoading(false));
-  }, [paginatedCards]);
-
-  // Total FMV calculation
-  const totalFMV = useMemo(() => {
-    let sum = 0;
-    for (const card of cards) {
-      const fmv = fmvMap[card.tokenId];
-      if (fmv != null) sum += fmv;
-    }
-    return sum;
-  }, [cards, fmvMap]);
 
   const handleConnectWallet = useCallback(async () => {
     const trimmed = walletAddress.trim();
@@ -204,21 +272,24 @@ export default function CardVault() {
     setLoading(true);
     setFetchError("");
     setCards([]);
-    setFmvMap({});
+    setTotalFMV(0);
     setCurrentPage(1);
+    setPendingTokenIds([]);
 
     try {
-      const result = await fetchWalletCards(trimmed, (loaded, total) => {
-        setLoadProgress({ loaded, total });
-      });
+      const { cards: result, totalFMV: fmv, balance, pendingTokenIds: pending } =
+        await fetchWalletCardsFromServer(trimmed);
 
       setCards(result);
+      setTotalFMV(fmv);
       setWalletConnected(true);
+      if (pending.length > 0) setPendingTokenIds(pending);
 
       if (userId) {
         saveVaultData(userId, {
           walletAddress: trimmed,
-          cards: result,
+          cards: result.filter((c) => !c.loading),
+          totalFMV: fmv,
           timestamp: Date.now(),
         });
       }
@@ -226,7 +297,7 @@ export default function CardVault() {
       if (result.length === 0) {
         toast.info(t("vault.noCardsFound"));
       } else {
-        toast.success(t("vault.foundCards", { count: result.length }));
+        toast.success(t("vault.foundCards", { count: balance }));
       }
     } catch (error: any) {
       console.error("Failed to fetch cards:", error);
@@ -240,14 +311,14 @@ export default function CardVault() {
   const handleDisconnect = () => {
     setWalletConnected(false);
     setCards([]);
+    setTotalFMV(0);
     setWalletAddress("");
     setSelectedCard(null);
     setFetchError("");
-    setFmvMap({});
     setCurrentPage(1);
-    if (userId) {
-      clearVaultData(userId);
-    }
+    setPendingTokenIds([]);
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    if (userId) clearVaultData(userId);
   };
 
   const handleCopyAddress = async () => {
@@ -300,249 +371,185 @@ export default function CardVault() {
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#d4a853]/20 to-[#7eb8d4]/20 border border-white/10 flex items-center justify-center mx-auto mb-6">
                   <Wallet className="w-10 h-10 text-[#d4a853]" />
                 </div>
-                <h2 className="font-heading text-xl font-semibold text-white mb-3">
-                  {t("vault.connectWallet")}
+                <h2 className="font-heading text-xl font-semibold text-white mb-2">
+                  {t("vault.connectTitle")}
                 </h2>
                 <p className="text-white/40 text-sm font-heading mb-8 leading-relaxed">
                   {t("vault.connectDesc")}
                 </p>
 
-                <div className="mb-4">
-                  <div
-                    className={`flex items-center gap-2 bg-white/5 rounded-xl px-4 py-3 border transition-colors ${
-                      inputError
-                        ? "border-red-500/50"
-                        : "border-white/10 focus-within:border-[#d4a853]/40"
-                    }`}
-                  >
-                    <Wallet className="w-4 h-4 text-white/30 flex-shrink-0" />
-                    <input
-                      type="text"
-                      value={walletAddress}
-                      onChange={(e) => {
-                        setWalletAddress(e.target.value);
-                        setInputError("");
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !loading) handleConnectWallet();
-                      }}
-                      placeholder="0x..."
-                      className="bg-transparent text-white text-sm outline-none w-full placeholder:text-white/25 font-mono"
-                      disabled={loading}
-                    />
+                {/* Wallet Input */}
+                <div className="relative mb-4">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/25">
+                    <Wallet className="w-4 h-4" />
                   </div>
-                  {inputError && (
-                    <p className="text-red-400/80 text-xs mt-2 text-left font-heading flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      {inputError}
-                    </p>
-                  )}
+                  <input
+                    type="text"
+                    value={walletAddress}
+                    onChange={(e) => {
+                      setWalletAddress(e.target.value);
+                      setInputError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !loading) handleConnectWallet();
+                    }}
+                    placeholder="0x..."
+                    className="w-full pl-10 pr-4 py-3.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white/80 text-sm font-mono placeholder-white/20 focus:outline-none focus:border-[#d4a853]/40 focus:bg-white/[0.06] transition-all"
+                  />
                 </div>
 
-                <button
-                  onClick={handleConnectWallet}
-                  disabled={loading}
-                  className="vault-btn-gold text-sm px-8 py-3 w-full flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {t("vault.loadingCards")}
-                      {loadProgress.total > 0 && (
-                        <span>
-                          ({loadProgress.loaded}/{loadProgress.total})
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    t("vault.loadCards")
-                  )}
-                </button>
+                {inputError && (
+                  <p className="text-red-400/80 text-xs font-heading mb-3 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {inputError}
+                  </p>
+                )}
 
                 {fetchError && (
-                  <p className="text-red-400/70 text-xs mt-4 font-heading flex items-center justify-center gap-1.5">
+                  <p className="text-red-400/80 text-xs font-heading mb-3 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5" />
                     {fetchError}
                   </p>
                 )}
 
-                <p className="text-white/20 text-[11px] mt-6 font-heading leading-relaxed">
-                  {t("vault.erc721Note")}
+                <button
+                  onClick={handleConnectWallet}
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl font-heading font-semibold text-sm text-white transition-all hover:brightness-110 hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0"
+                  style={{
+                    background: "linear-gradient(135deg, #c9953c 0%, #d4a853 50%, #c9953c 100%)",
+                    backgroundSize: "200% 200%",
+                    boxShadow: "0 4px 20px rgba(212,168,83,0.25)",
+                  }}
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t("vault.loading")}
+                    </span>
+                  ) : (
+                    t("vault.loadCards")
+                  )}
+                </button>
+
+                <p className="text-white/15 text-[11px] font-heading mt-5 leading-relaxed">
+                  {t("vault.disclaimer")}
                   <br />
                   {t("vault.contract")}: 0xF864...5b30
                 </p>
               </motion.div>
             </div>
           ) : (
-            /* ============ Cards Display ============ */
+            /* ============ Card Library State ============ */
             <>
-              {/* Wallet info bar */}
-              <div className="glass-card p-3 px-5 mb-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#d4a853]/25 to-[#7eb8d4]/25 border border-white/10 flex items-center justify-center">
-                    <Wallet className="w-4 h-4 text-[#d4a853]" />
-                  </div>
-                  <div>
-                    <p className="text-white/35 text-[11px] font-heading uppercase tracking-wider">
-                      {t("vault.connectedWallet")}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-white/75 text-sm font-mono">
-                        {walletAddress.slice(0, 10)}...{walletAddress.slice(-8)}
-                      </p>
-                      <button
-                        onClick={handleCopyAddress}
-                        className="text-white/30 hover:text-white/60 transition-colors"
-                      >
-                        {copied ? (
-                          <Check className="w-3.5 h-3.5 text-[#d4a853]" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+              {/* Stats Bar */}
+              <div className="flex flex-wrap items-center gap-3 mb-5">
+                {/* Wallet address */}
+                <button
+                  onClick={handleCopyAddress}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white/40 hover:text-white/70 transition-all text-xs font-mono"
+                >
+                  {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  {walletAddress.slice(0, 8)}...{walletAddress.slice(-6)}
+                </button>
+
+                {/* Card count */}
+                <div className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white/40 text-xs font-heading">
+                  {cards.length} {t("vault.cards")}
+                  {pendingTokenIds.length > 0 && (
+                    <span className="ml-1.5 text-white/25">
+                      (<Loader2 className="inline w-2.5 h-2.5 animate-spin mr-0.5" />
+                      {pendingTokenIds.length} {t("vault.loading")})
+                    </span>
+                  )}
                 </div>
-                <div className="text-sm font-heading text-white/55">
-                  {t("vault.cardsFound", { count: cards.length })}
+
+                {/* Total FMV */}
+                <div className="px-3 py-1.5 rounded-lg bg-[#d4a853]/[0.08] border border-[#d4a853]/[0.15] flex items-center gap-2">
+                  <span className="text-white/30 text-[10px] font-heading uppercase tracking-wide">
+                    {t("vault.totalFMV")}
+                  </span>
+                  <span className="text-[#e8c675] text-sm font-bold font-mono">
+                    {totalFMV > 0 ? `$${totalFMV.toFixed(2)}` : "--"}
+                  </span>
+                </div>
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t("vault.search")}
+                    className="pl-8 pr-3 py-1.5 bg-white/[0.04] border border-white/[0.06] rounded-lg text-white/70 text-xs font-heading placeholder-white/20 focus:outline-none focus:border-white/[0.12] transition-all w-48"
+                  />
+                </div>
+
+                {/* View toggle */}
+                <div className="flex items-center gap-1 p-1 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    className={`p-1.5 rounded-lg transition-all ${viewMode === "grid" ? "bg-white/[0.08] text-white/80" : "text-white/25 hover:text-white/50"}`}
+                  >
+                    <Grid3X3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={`p-1.5 rounded-lg transition-all ${viewMode === "list" ? "bg-white/[0.08] text-white/80" : "text-white/25 hover:text-white/50"}`}
+                  >
+                    <List className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 
-              {/* Search & View Toggle */}
-              {cards.length > 0 && (
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="flex-1 flex items-center gap-2 bg-white/[0.04] rounded-[0.875rem] px-4 py-2.5 border border-white/[0.06] focus-within:border-[#d4a853]/25 transition-colors">
-                    <Search className="w-4 h-4 text-white/30" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={t("vault.searchPlaceholder")}
-                      className="bg-transparent text-white text-sm outline-none w-full placeholder:text-white/20 font-heading"
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        className="text-white/30 hover:text-white/60"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => setViewMode("grid")}
-                      className={`p-2.5 rounded-[0.625rem] border transition-colors ${
-                        viewMode === "grid"
-                          ? "bg-white/[0.08] border-white/[0.12] text-white"
-                          : "bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      <Grid3X3 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setViewMode("list")}
-                      className={`p-2.5 rounded-[0.625rem] border transition-colors ${
-                        viewMode === "list"
-                          ? "bg-white/[0.08] border-white/[0.12] text-white"
-                          : "bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      <List className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Stats - 5 columns */}
-              {cards.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
-                  <div className="glass-card p-3.5 text-center">
-                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.totalCards")}</p>
-                    <p className="text-white font-heading font-semibold text-base">{cards.length}</p>
-                  </div>
-                  <div className="glass-card p-3.5 text-center">
-                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.collections")}</p>
-                    <p className="text-white font-heading font-semibold text-base">
-                      {new Set(cards.map((c) => c.metadata.collection_name)).size}
-                    </p>
-                  </div>
-                  <div className="glass-card p-3.5 text-center">
-                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.highestGrade")}</p>
-                    <p className="text-[#e8c675] font-heading font-semibold text-base">
-                      {cards.length > 0
-                        ? getCardAttribute(cards[0].metadata, "Grade") || "--"
-                        : "--"}
-                    </p>
-                  </div>
-                  <div className="glass-card p-3.5 text-center">
-                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.totalFMV")}</p>
-                    <p className="text-[#e8c675] font-heading font-semibold text-base">
-                      {totalFMV > 0 ? `$${totalFMV.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "--"}
-                    </p>
-                  </div>
-                  <div className="glass-card p-3.5 text-center">
-                    <p className="text-white/35 text-[11px] font-heading mb-0.5">{t("vault.fmvSource")}</p>
-                    <p className="font-heading font-semibold text-sm">
-                      <span className="inline-flex items-center gap-1.5 text-[#e8c675]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#e8c675] animate-pulse" />
-                        Renaiss {t("vault.live")}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Card Grid / List - 5 columns */}
+              {/* Card Grid / List */}
               {paginatedCards.length > 0 ? (
                 viewMode === "grid" ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {paginatedCards.map((card, i) => (
-                      <CardGridItem
-                        key={card.tokenId}
-                        card={card}
-                        index={i}
-                        fmv={fmvMap[card.tokenId] ?? null}
-                        onClick={() => setSelectedCard(card)}
-                      />
+                      card.loading ? (
+                        <CardSkeleton key={card.tokenId} index={i} />
+                      ) : (
+                        <CardGridItem
+                          key={card.tokenId}
+                          card={card}
+                          index={i}
+                          fmv={card.fmv ?? null}
+                          onClick={() => setSelectedCard(card)}
+                        />
+                      )
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-2.5">
+                  <div className="flex flex-col gap-2">
                     {paginatedCards.map((card, i) => (
-                      <CardListItem
-                        key={card.tokenId}
-                        card={card}
-                        index={i}
-                        fmv={fmvMap[card.tokenId] ?? null}
-                        onClick={() => setSelectedCard(card)}
-                      />
+                      card.loading ? (
+                        <CardListSkeleton key={card.tokenId} index={i} />
+                      ) : (
+                        <CardListItem
+                          key={card.tokenId}
+                          card={card}
+                          index={i}
+                          fmv={card.fmv ?? null}
+                          onClick={() => setSelectedCard(card)}
+                        />
+                      )
                     ))}
                   </div>
                 )
-              ) : cards.length > 0 && searchQuery ? (
-                <div className="glass-card p-16 text-center">
-                  <Search className="w-8 h-8 text-white/20 mx-auto mb-4" />
-                  <h3 className="text-white/60 font-heading text-lg mb-2">{t("vault.noResults")}</h3>
-                  <p className="text-white/30 text-sm font-heading">
-                    {t("vault.noMatch", { query: searchQuery })}
-                  </p>
+              ) : (
+                <div className="text-center py-20 text-white/25 font-heading">
+                  {searchQuery ? t("vault.noResults") : t("vault.noCardsFound")}
                 </div>
-              ) : cards.length === 0 ? (
-                <div className="glass-card p-16 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4">
-                    <Wallet className="w-8 h-8 text-white/30" />
-                  </div>
-                  <h3 className="text-white/60 font-heading text-lg mb-2">{t("vault.noRenaisCards")}</h3>
-                  <p className="text-white/30 text-sm font-heading">
-                    {t("vault.noRenaisCardsDesc")}
-                  </p>
-                </div>
-              ) : null}
+              )}
 
               {/* Pagination */}
-              {filteredCards.length > CARDS_PER_PAGE && (
-                <div className="flex items-center justify-center gap-1.5 mt-6">
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-1.5 mt-8">
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
@@ -604,12 +611,49 @@ export default function CardVault() {
         {selectedCard && (
           <CardDetailModal
             card={selectedCard}
-            fmv={fmvMap[selectedCard.tokenId] ?? null}
+            fmv={selectedCard.fmv ?? null}
             onClose={() => setSelectedCard(null)}
           />
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/* ============ Skeleton Components ============ */
+function CardSkeleton({ index }: { index: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.05 * Math.min(index, 8) }}
+    >
+      <div className="glass-card overflow-hidden">
+        <div className="relative aspect-[3/4] bg-white/[0.04] rounded-t-[1rem] animate-pulse" />
+        <div className="p-2.5 space-y-2">
+          <div className="h-3 bg-white/[0.04] rounded animate-pulse" />
+          <div className="h-3 bg-white/[0.04] rounded w-2/3 animate-pulse" />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function CardListSkeleton({ index }: { index: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.03 * Math.min(index, 10) }}
+    >
+      <div className="glass-card p-3.5 flex items-center gap-4">
+        <div className="w-14 h-[4.5rem] rounded-lg bg-white/[0.04] animate-pulse flex-shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-3 bg-white/[0.04] rounded animate-pulse" />
+          <div className="h-3 bg-white/[0.04] rounded w-1/2 animate-pulse" />
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -755,6 +799,12 @@ function CardDetailModal({
   onClose: () => void;
 }) {
   const t = useT();
+  const [magnifier, setMagnifier] = useState({ active: false, x: 0, y: 0 });
+  const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const LENS_SIZE = 160;
+  const ZOOM = 3;
   const grade = getCardAttribute(card.metadata, "Grade");
   const serial = getCardAttribute(card.metadata, "Serial");
   const year = getCardAttribute(card.metadata, "Year");
@@ -776,10 +826,8 @@ function CardDetailModal({
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/75 backdrop-blur-[10px]" />
 
-      {/* Modal - NO SCROLL */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -788,7 +836,6 @@ function CardDetailModal({
         className="relative w-[960px] max-w-[95vw] max-h-[92vh] overflow-hidden bg-[rgba(14,13,22,0.97)] backdrop-blur-[40px] border border-white/[0.06] rounded-[1.25rem] flex"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-3.5 right-3.5 z-10 w-8 h-8 rounded-full bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-white/50 hover:text-white hover:bg-white/[0.15] transition-all"
@@ -796,18 +843,83 @@ function CardDetailModal({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Image Section - LEFT, LARGE */}
-        <div className="w-[380px] flex-shrink-0 bg-black/25 flex items-center justify-center rounded-l-[1.25rem] p-6">
+        {/* Image Section - LEFT with Magnifier */}
+        <div
+          ref={containerRef}
+          className="w-[380px] flex-shrink-0 bg-black/25 flex items-center justify-center rounded-l-[1.25rem] p-6 relative overflow-hidden"
+          style={{ cursor: 'crosshair' }}
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setMagnifier({ active: true, x: e.clientX - rect.left, y: e.clientY - rect.top });
+          }}
+          onMouseLeave={() => setMagnifier({ active: false, x: 0, y: 0 })}
+        >
           <img
+            ref={imgRef}
             src={card.metadata.image}
             alt={card.metadata.name}
-            className="max-w-full max-h-[72vh] object-contain rounded-lg"
+            className="max-w-full max-h-[72vh] object-contain rounded-lg select-none"
+            draggable={false}
           />
+
+          {/* Magnifier Lens */}
+          {magnifier.active && (() => {
+            const img = imgRef.current;
+            const container = containerRef.current;
+            if (!img || !container) return null;
+
+            const imgRect = img.getBoundingClientRect();
+            const conRect = container.getBoundingClientRect();
+            const imgLeft = imgRect.left - conRect.left;
+            const imgTop = imgRect.top - conRect.top;
+            const imgW = imgRect.width;
+            const imgH = imgRect.height;
+
+            const relX = magnifier.x - imgLeft;
+            const relY = magnifier.y - imgTop;
+            const pctX = Math.max(0, Math.min(1, relX / imgW));
+            const pctY = Math.max(0, Math.min(1, relY / imgH));
+
+            const zoomedW = imgW * ZOOM;
+            const zoomedH = imgH * ZOOM;
+            const bgX = -(pctX * zoomedW - LENS_SIZE / 2);
+            const bgY = -(pctY * zoomedH - LENS_SIZE / 2);
+
+            const lensLeft = Math.max(0, Math.min(conRect.width - LENS_SIZE, magnifier.x - LENS_SIZE / 2));
+            const lensTop = Math.max(0, Math.min(conRect.height - LENS_SIZE, magnifier.y - LENS_SIZE / 2));
+
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: lensLeft,
+                  top: lensTop,
+                  width: LENS_SIZE,
+                  height: LENS_SIZE,
+                  borderRadius: '50%',
+                  border: '2.5px solid rgba(212,168,83,0.75)',
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.5), 0 8px 32px rgba(0,0,0,0.7)',
+                  overflow: 'hidden',
+                  pointerEvents: 'none',
+                  zIndex: 20,
+                  backgroundImage: `url(${card.metadata.image})`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: `${zoomedW}px ${zoomedH}px`,
+                  backgroundPosition: `${bgX}px ${bgY}px`,
+                }}
+              />
+            );
+          })()}
+
+          {!magnifier.active && (
+            <div className="absolute bottom-4 right-4 w-7 h-7 rounded-full bg-black/50 border border-white/15 flex items-center justify-center text-white/30 pointer-events-none">
+              <ZoomIn className="w-3.5 h-3.5" />
+            </div>
+          )}
         </div>
 
-        {/* Details Section - RIGHT, COMPACT, NO SCROLL */}
+        {/* Details Section - RIGHT */}
         <div className="flex-1 p-6 flex flex-col justify-between gap-0 min-h-0">
-          {/* TOP: Title + FMV */}
           <div className="flex flex-col gap-3">
             {card.metadata.collection_name && (
               <p className="text-[#9ccde5] text-[10px] font-heading uppercase tracking-wider opacity-80">
@@ -836,9 +948,8 @@ function CardDetailModal({
             </div>
           </div>
 
-          {/* MID: Attributes + Chain */}
+          {/* Attributes */}
           <div className="flex flex-col gap-2.5 flex-1 justify-center">
-            {/* Attributes 3-column grid */}
             <div className="grid grid-cols-3 gap-2">
               {grader && (
                 <div className="bg-white/[0.03] border border-white/[0.04] rounded-lg p-2">
@@ -884,23 +995,17 @@ function CardDetailModal({
               )}
             </div>
 
-            {/* Chain Info - compact */}
+            {/* Chain Info */}
             <div className="bg-white/[0.02] border border-white/[0.03] rounded-lg px-3 py-2.5">
               <p className="text-white/20 text-[9px] font-heading uppercase tracking-wide mb-1.5">{t("vault.onChainInfo")}</p>
               <div className="space-y-0.5">
                 <div className="flex items-center justify-between">
                   <span className="text-white/20 text-[11px] font-heading">{t("vault.chain")}</span>
-                  <span className="text-white/55 text-[11px] font-mono">
-                    {card.metadata.token_info?.chain || "BSC Mainnet"}
-                  </span>
+                  <span className="text-white/55 text-[11px] font-mono">BSC Mainnet</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-white/20 text-[11px] font-heading">{t("vault.contract")}</span>
-                  <span className="text-white/55 text-[11px] font-mono">
-                    {card.metadata.token_info?.contract_address
-                      ? `${card.metadata.token_info.contract_address.slice(0, 6)}...${card.metadata.token_info.contract_address.slice(-4)}`
-                      : "0xF864...5b30"}
-                  </span>
+                  <span className="text-white/55 text-[11px] font-mono">0xF864...5b30</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-white/20 text-[11px] font-heading">{t("vault.tokenId")}</span>
@@ -914,7 +1019,7 @@ function CardDetailModal({
             </div>
           </div>
 
-          {/* BOTTOM: Action Buttons */}
+          {/* Action Buttons */}
           <div className="flex flex-col gap-2">
             <div className="flex gap-2.5">
               {psaVerifyUrl && (

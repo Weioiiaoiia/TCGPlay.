@@ -8,6 +8,18 @@ const plugins = [react(), tailwindcss()];
 export default defineConfig({
   server: {
     allowedHosts: true,
+    proxy: {
+      // Proxy /api/bsc-rpc to local Express server (handles chunking + rate limit)
+      "/api/bsc-rpc": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+      // Proxy /api/renaiss/* to the local express server on port 3001
+      "/api/renaiss": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+    },
   },
   plugins,
   resolve: {
