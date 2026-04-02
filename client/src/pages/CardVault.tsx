@@ -189,20 +189,35 @@ export default function CardVault() {
               const replacement = fetchedMap.get(updated[i].tokenId);
               if (replacement) updated[i] = replacement;
             }
+            // Recalculate totalFMV from ALL cards after merging
+            let newTotalFMV = 0;
+            for (const card of updated) {
+              if (card.fmv != null) newTotalFMV += card.fmv;
+            }
+            setTotalFMV(newTotalFMV);
+            // Update localStorage with latest data
+            if (userId && walletAddress) {
+              saveVaultData(userId, {
+                walletAddress,
+                cards: updated.filter((c) => !c.loading),
+                totalFMV: newTotalFMV,
+                timestamp: Date.now(),
+              });
+            }
             return updated;
           });
           // Remove resolved tokenIds from pending
           const resolvedIds = new Set(fetched.map((c) => c.tokenId));
           setPendingTokenIds((prev) => prev.filter((id) => !resolvedIds.has(id)));
         }
-      } catch {}
+      } catch {};
     };
 
     pollTimerRef.current = setTimeout(poll, 3000);
     return () => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [pendingTokenIds]);
+  }, [pendingTokenIds, userId, walletAddress]);
 
   // ── Restore wallet connection from localStorage on mount ──
   useEffect(() => {
@@ -470,7 +485,7 @@ export default function CardVault() {
                     {t("vault.totalFMV")}
                   </span>
                   <span className="text-[#e8c675] text-sm font-bold font-mono">
-                    {totalFMV > 0 ? `$${totalFMV.toFixed(2)}` : "--"}
+                    {totalFMV > 0 ? `$${totalFMV.toFixed(2)}` : (loading ? "..." : "--")}
                   </span>
                 </div>
 

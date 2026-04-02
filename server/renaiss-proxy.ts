@@ -449,6 +449,73 @@ setTimeout(() => warmPool(), 5000);
 // Background metadata fetch cache (for tokens not in tRPC)
 const tokenUriMetaCache = new Map<string, any>();
 
+// ── Fetch FMV for a single card via tRPC search ──
+async function fetchFmvFromTrpc(decimal: string): Promise<number | null> {
+  try {
+    const input = encodeURIComponent(JSON.stringify({
+      "0": {
+        "json": {
+          "limit": 1, "offset": 0, "search": decimal,
+          "sortBy": "listDate", "sortOrder": "desc",
+          "categoryFilter": null, "listedOnly": null,
+          "characterFilter": "", "languageFilter": "",
+          "gradingCompanyFilter": "", "gradeFilter": "",
+          "yearRange": "", "priceRangeFilter": ""
+        },
+        "meta": { "values": { "search": ["undefined"], "categoryFilter": ["undefined"], "listedOnly": ["undefined"] } }
+      }
+    }));
+    const url = `https://www.renaiss.xyz/api/trpc/collectible.list?batch=1&input=${input}`;
+    const res = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://www.renaiss.xyz/marketplace',
+      },
+    });
+    const collection = res.data?.[0]?.result?.data?.json?.collection ?? [];
+    if (collection.length > 0) {
+      const item = collection[0];
+      // Verify tokenId matches (search might return partial matches)
+      if (String(item.tokenId) === decimal) {
+        const fmvRaw = item.fmvPriceInUSD;
+        if (fmvRaw != null) {
+          const fmv = parseInt(String(fmvRaw), 10) / 100;
+          // Also update globalCardCache with full data
+          const rawAttrs: Array<{ trait: string; value: string }> = item.attributes ?? [];
+          const attributes = rawAttrs.map((a: any) => ({ trait_type: a.trait, value: a.value }));
+          globalCardCache.set(decimal, {
+            tokenId: decimal,
+            renaisUrl: `https://renaiss.xyz/card/${decimal}`,
+            fmv,
+            metadata: {
+              name: item.name || "Unknown Card",
+              image: item.frontImageUrl || "",
+              animationUrl: item.animationUrl || null,
+              attributes,
+              grader: getAttr(rawAttrs, "Grader"),
+              serial: getAttr(rawAttrs, "Serial"),
+              grade: getAttr(rawAttrs, "Grade"),
+              year: getAttr(rawAttrs, "Year"),
+              set: getAttr(rawAttrs, "Set"),
+              language: getAttr(rawAttrs, "Language"),
+              cardNumber: getAttr(rawAttrs, "Card Number"),
+              setName: item.setName || "",
+              pokemonName: item.pokemonName || "",
+            },
+          });
+          return fmv;
+        }
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error(`[Renaiss] tRPC FMV lookup error for ${decimal.slice(0,10)}:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 async function fetchMissingCardByTokenURI(decimal: string): Promise<any | null> {
   if (tokenUriMetaCache.has(decimal)) return tokenUriMetaCache.get(decimal);
   try {
@@ -464,11 +531,21 @@ async function fetchMissingCardByTokenURI(decimal: string): Promise<any | null> 
     const meta = res.data;
     const rawAttrs: Array<{ trait_type: string; value: string }> = meta.attributes || [];
     const getA = (key: string) => rawAttrs.find(a => a.trait_type?.toLowerCase() === key.toLowerCase())?.value ?? "";
+
+    // Try to get real FMV from tRPC search
+    let fmv: number | null = null;
+    const cached = globalCardCache.get(decimal);
+    if (cached && cached.fmv != null) {
+      fmv = cached.fmv;
+    } else {
+      fmv = await fetchFmvFromTrpc(decimal);
+    }
+
     const card = {
       tokenId: decimal,
       tokenIdHex: tid,
       renaisUrl: `https://renaiss.xyz/card/${decimal}`,
-      fmv: null,
+      fmv,
       loading: false,
       metadata: {
         name: meta.name || "Unknown Card",
@@ -482,8 +559,8 @@ async function fetchMissingCardByTokenURI(decimal: string): Promise<any | null> 
         set: getA("Set"),
         language: getA("Language"),
         cardNumber: getA("Card Number"),
-        setName: "",
-        pokemonName: "",
+        setName: cached?.metadata?.setName || "",
+        pokemonName: cached?.metadata?.pokemonName || "",
         token_info: {
           token_id: decimal,
           contract_address: RENAISS_NFT_CONTRACT,
@@ -601,7 +678,30 @@ router.get("/wallet-cards/:wallet", async (req, res) => {
       }
     }
 
-    // Step 4: Calculate total FMV (from cached cards)
+    // Step 4: For missing cards, try to get FMV from tRPC search before responding
+    // This ensures totalFMV includes ALL cards, not just cached ones
+    if (missingDecimals.length > 0) {
+      console.log(`[Renaiss] Fetching FMV for ${missingDecimals.length} missing cards via tRPC search...`);
+      const fmvResults = await pMap(missingDecimals, async (decimal) => {
+        try {
+          const fmv = await fetchFmvFromTrpc(decimal);
+          return { decimal, fmv };
+        } catch {
+          return { decimal, fmv: null };
+        }
+      }, 4);
+
+      // Update placeholder cards with FMV data
+      const fmvMap = new Map(fmvResults.map(r => [r.decimal, r.fmv]));
+      for (let i = 0; i < cards.length; i++) {
+        const cardFmv = fmvMap.get(cards[i].tokenId);
+        if (cardFmv != null) {
+          cards[i].fmv = cardFmv;
+        }
+      }
+    }
+
+    // Step 5: Calculate total FMV (from ALL cards including newly fetched FMV)
     let totalFMV = 0;
     for (const card of cards) {
       if (card.fmv != null) totalFMV += card.fmv;
@@ -609,14 +709,14 @@ router.get("/wallet-cards/:wallet", async (req, res) => {
 
     const elapsed = Date.now() - startTime;
     const cacheHit = cards.length - missingDecimals.length;
-    console.log(`[Renaiss] wallet-cards ${addr.slice(0,10)}...: ${cards.length}/${balance} cards (${cacheHit} cached, ${missingDecimals.length} loading), totalFMV=$${totalFMV.toFixed(0)}, ${elapsed}ms`);
+    console.log(`[Renaiss] wallet-cards ${addr.slice(0,10)}...: ${cards.length}/${balance} cards (${cacheHit} cached, ${missingDecimals.length} loading), totalFMV=$${totalFMV.toFixed(2)}, ${elapsed}ms`);
 
-    // Return immediately with cached + placeholder cards
+    // Return immediately with cached + placeholder cards (FMV is now complete)
     res.json({ cards, balance, totalFMV, elapsed, pendingTokenIds: missingDecimals });
 
-    // Background: fetch missing cards via tokenURI (updates tokenUriMetaCache for next request)
+    // Background: fetch missing cards metadata via tokenURI (updates tokenUriMetaCache for next request)
     if (missingDecimals.length > 0) {
-      console.log(`[Renaiss] Background fetching ${missingDecimals.length} missing cards via tokenURI...`);
+      console.log(`[Renaiss] Background fetching ${missingDecimals.length} missing cards metadata via tokenURI...`);
       pMap(missingDecimals, (decimal) => fetchMissingCardByTokenURI(decimal), 8).catch(() => {});
     }
   } catch (e) {
@@ -636,6 +736,14 @@ router.post("/wallet-cards-pending", express.json(), async (req, res) => {
     for (const decimal of tokenIds) {
       const cached = tokenUriMetaCache.get(decimal);
       if (cached) {
+        // Ensure FMV is up-to-date from globalCardCache
+        if (cached.fmv == null) {
+          const globalCached = globalCardCache.get(decimal);
+          if (globalCached && globalCached.fmv != null) {
+            cached.fmv = globalCached.fmv;
+            tokenUriMetaCache.set(decimal, cached);
+          }
+        }
         results.push(cached);
       } else {
         stillPending.push(decimal);
@@ -648,7 +756,12 @@ router.post("/wallet-cards-pending", express.json(), async (req, res) => {
         if (card) results.push(card);
       }
     }
-    res.json({ cards: results });
+    // Calculate total FMV for the resolved cards
+    let resolvedFMV = 0;
+    for (const card of results) {
+      if (card && card.fmv != null) resolvedFMV += card.fmv;
+    }
+    res.json({ cards: results, resolvedFMV });
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Unknown error" });
   }
